@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  allure-behavior-snippets:
+    build: .
+    user: "${UID-1000}:${UID-1000}"
+    command: ["/data/behaviors.json", "/data/images"]
+    volumes:
+      - "./tests/allure-report/data/behaviors.json:/data/behaviors.json"
+      - "./images:/data/images"
+  snippets-server:
+    image: nginx:1.25.1-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - "./images:/usr/share/nginx/html:ro"
+  allure-report:
+    image: nginx:1.25.1-alpine
+    ports:
+      - "8081:80"
+    volumes:
+      - "./tests/allure-report:/usr/share/nginx/html:ro"

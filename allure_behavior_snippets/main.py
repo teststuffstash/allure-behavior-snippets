@@ -1,3 +1,4 @@
+import argparse
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,7 +62,7 @@ def generate_image_per_story(filename, target_directory):
 
 
 def list_of_files():
-    p = Path('./allure-results')
+    p = Path('../allure-results')
     yield from p.glob('*-result.json')
 
 
@@ -88,7 +89,16 @@ def generate_svgwrite_image(filename: str, story: Story):
     dwg.save()
 
 
+def cli():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("behaviors", help="location of behaviors.json")
+    parser.add_argument("target", help="target directory for generated images")
+    args = parser.parse_args()
+    # generate_image_per_story('../tests/behaviors.json', target_directory='images')
+    generate_image_per_story(args.behaviors, target_directory=args.target)
+
+
 if __name__ == '__main__':
-    generate_image_per_story('tests/behaviors.json', target_directory='images')
+    cli()
     # import cProfile
     # cProfile.run("generate_image_per_story('behaviors.json', target_directory='images')", sort='tottime')
