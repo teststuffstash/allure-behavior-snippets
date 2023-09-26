@@ -89,4 +89,6 @@ def generate_svgwrite_image(filename: str, story: Story):
 
 
 if __name__ == '__main__':
-    generate_image_per_story('behaviors.json', target_directory='images')
+    generate_image_per_story('tests/behaviors.json', target_directory='images')
+    # import cProfile
+    # cProfile.run("generate_image_per_story('behaviors.json', target_directory='images')", sort='tottime')
