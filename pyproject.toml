@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "allure-behavior-snippets"
+version = "0.1.0"
+description = "Create image with tests for each Allure behavior"
+authors = ["Your Name <you@example.com>"]
+license = "Apache License"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+jq = "1.4.1"
+svgwrite = "1.4.3"
+
+[tool.poetry.group.dev.dependencies]
+pytest-playwright = "0.4.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
