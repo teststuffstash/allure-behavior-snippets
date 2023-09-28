@@ -1,0 +1,13 @@
+include:
+  - ../docker-compose.yml
+services:
+  acceptance-tests:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile
+    command: --config-file=pytest-docker.ini acceptance_tests.py
+  unit-tests:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile
+    command: --config-file=pytest-docker.ini

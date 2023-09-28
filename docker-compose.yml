@@ -1,9 +1,8 @@
-version: '3.8'
 services:
   allure-behavior-snippets:
     build: .
     user: "${UID-1000}:${UID-1000}"
-    command: ["/data/behaviors.json", "/data/images"]
+    command: [ "/data/behaviors.json", "/data/images" ]
     volumes:
       - "./tests/allure-report/data/behaviors.json:/data/behaviors.json"
       - "./images:/data/images"

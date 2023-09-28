@@ -11,8 +11,10 @@ python = "^3.11"
 jq = "1.4.1"
 svgwrite = "1.4.3"
 
+
 [tool.poetry.group.dev.dependencies]
 pytest-playwright = "0.4.2"
+pytest-playwright-snapshot = "^1.0"
 
 [build-system]
 requires = ["poetry-core"]
