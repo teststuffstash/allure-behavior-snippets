@@ -93,7 +93,6 @@ jobs:
         id: acceptance-test
         working-directory: tests
         run: |
-          id
           chmod +x ../setup_docker_compose_env.sh
           ../setup_docker_compose_env.sh
           docker compose -f docker-compose.yml up --build --exit-code-from allure-behavior-snippets allure-behavior-snippets
