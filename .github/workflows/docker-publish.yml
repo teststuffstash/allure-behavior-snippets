@@ -81,7 +81,22 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          #load: true #for debugging in act
 
+      - name: unit test
+        id: unit-test
+        working-directory: tests
+        run: |
+          docker compose -f docker-compose.yml up --build --exit-code-from unit-tests unit-tests
+
+      - name: acceptance test
+        id: acceptance-test
+        working-directory: tests
+        run: |
+          chmod +x ../setup_docker_compose_env.sh
+          ../setup_docker_compose_env.sh
+          docker compose -f docker-compose.yml up --build --exit-code-from allure-behavior-snippets allure-behavior-snippets
+          docker compose -f docker-compose.yml up --build --exit-code-from acceptance-tests acceptance-tests
       # Sign the resulting Docker image digest except on PRs.
       # This will only write to the public Rekor transparency log when the Docker
       # repository is public to avoid leaking data.  If you would like to publish
