@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import List
 
 import jq
+import svgwrite
+from svgwrite import container
 
 
 # Code completion for data, inspiration from https://json2csharp.com/code-converters/json-to-python
@@ -45,20 +47,12 @@ class Story:
         self.children = [Test(**child) for child in self.children]
 
 
-def save_image(filename, image):
-    with open(filename, 'w') as file:
-        file.write(image)
-
-
-def generate_image_per_story(filename, target_directory):
+def generate_image_per_story(filename, target_directory, report_url=None):
     with open(filename, 'r') as file:
         data = file.read()
     for story_data in jq.compile('.children[].children | select(. != null ) |.[].children[]').input(text=data):
         story = Story(**story_data)
-        image = generate_image(story)
-
-        save_image(os.path.join(target_directory, story.name + '.svg'), image)
-        generate_svgwrite_image(os.path.join(target_directory, story.name + "_svg.svg"), story)
+        generate_svgwrite_image(os.path.join(target_directory, story.name + ".svg"), story, report_url)
 
 
 def list_of_files():
@@ -66,26 +60,24 @@ def list_of_files():
     yield from p.glob('*-result.json')
 
 
-def generate_image(story: Story):
-    image = f"""<svg version="1.1"
-     width="600" height="200"
-     xmlns="http://www.w3.org/2000/svg">"""
-    image += f"".join([f"<text x=\"0\" y=\"60\">{child.name}</text>" for child in story.children])
-    image += f"</svg>"
-    return image
-
-
-def generate_svgwrite_image(filename: str, story: Story):
-    import svgwrite
+def generate_svgwrite_image(filename: str, story: Story, report_url: str):
+    base_url = 'http://localhost:8081/#behaviors/'
     font_size = 14
     names = [child.name for child in story.children]
+    checkmark = "✓"  # https://en.wikipedia.org/wiki/Check_mark
+    crossmark = "❌"  # https://en.wikipedia.org/wiki/X_mark
 
     width = font_size * max(len(name) for name in names)
     height = (font_size + 8) * len(names)
     dwg = svgwrite.Drawing(filename, size=(f"{width}px", f"{height}px"),
                            profile='tiny')
     for index, child in enumerate(story.children, start=1):
-        dwg.add(dwg.text(child.name, insert=(0, index * 20), font_size=f"{font_size}px", font_family="Helvetica"))
+        icon = checkmark if child.status == 'passed' else crossmark
+        link = container.Hyperlink(f"{report_url}{child.parentUid}/{child.uid}")
+        link.add(
+            dwg.text(f"{icon} {child.name}", insert=(0, index * 20), font_size=f"{font_size}px",
+                     font_family="Helvetica"))
+        dwg.add(link)
     dwg.save()
 
 
@@ -93,9 +85,10 @@ def cli():
     parser = argparse.ArgumentParser()
     parser.add_argument("behaviors", help="location of behaviors.json")
     parser.add_argument("target", help="target directory for generated images")
+    parser.add_argument("report_url", help="base URL of Allure report")
     args = parser.parse_args()
-    # generate_image_per_story('../tests/behaviors.json', target_directory='images')
-    generate_image_per_story(args.behaviors, target_directory=args.target)
+    # generate_image_per_story('../tests/allure-report/data/behaviors.json', target_directory='../images', report_url='http://localhost:8081/#behaviors/')
+    generate_image_per_story(args.behaviors, target_directory=args.target, report_url=args.report_url)
 
 
 if __name__ == '__main__':

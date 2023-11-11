@@ -4,4 +4,4 @@ set -e
 
 . /venv/bin/activate
 
-allure-behavior-snippets "$1" "$2"
+allure-behavior-snippets "$1" "$2" "$3"
