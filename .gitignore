@@ -161,4 +161,3 @@ cython_debug/
 
 
 /images/*.svg
-/tests/.env

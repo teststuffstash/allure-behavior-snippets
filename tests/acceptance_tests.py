@@ -11,8 +11,8 @@ def raise_(ex):
 
 def test_page_has_required_files(page: Page):
     page.goto("/")
-    expected_filenames = ['EXAMPLE_svg', "Get a single user's data_svg", "Get all user's data_svg",
-                          "Get a post_svg"]
+    expected_filenames = ['EXAMPLE', "Get a single user's data", "Get all user's data",
+                          "Get a post"]
     for filename in expected_filenames:
         expect(page.locator(svg_by_file_name(filename))).to_be_visible()
 
@@ -34,6 +34,13 @@ def test_network_responses_all_200(page: Page):
 
 
 def test_screenshot(page: Page, assert_snapshot):
+    # Update snapshots with pytest --update-snapshots
     page.set_viewport_size(viewport_size={'width': 1920, 'height': 1080})
     page.goto('/')
     assert_snapshot(page.screenshot(), "behaviors.png")
+
+
+# def test_image_links_open_correct_behavior_in_report(page: Page):
+#     page.goto('/')
+#     page.locator(svg_by_file_name('EXAMPLE')).click() #should be possile https://github.com/microsoft/playwright-python/issues/1450
+#     expect(page.locator("h2").get_by_text("Given: posts exists; When: posts are queried; Then: all posts returned")).to_be_visible()
