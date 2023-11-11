@@ -51,7 +51,8 @@ def generate_image_per_story(filename, target_directory, report_url=None):
     with open(filename, 'r') as file:
         data = file.read()
     for story_data in jq.compile(
-            '.children[].children | select(. != null ) | .[] | select(.children!=null) |.children[]').input(text=data):
+            '.children[].children | select(. != null ) | .[] | select(.children!=null) |.children[] | select (.children != null)').input(
+        text=data):
         story = Story(**story_data)
         generate_svgwrite_image(os.path.join(target_directory, story.name + ".svg"), story, report_url)
 
