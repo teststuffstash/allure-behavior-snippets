@@ -50,11 +50,15 @@ class Story:
 def generate_image_per_story(filename, target_directory, report_url=None):
     with open(filename, 'r') as file:
         data = file.read()
-    for story_data in jq.compile(
-            '.children[].children | select(. != null ) | .[] | select(.children!=null) |.children[] | select (.children != null)').input(
-        text=data):
-        story = Story(**story_data)
+    for story in parse_behavior_data(data):
         generate_svgwrite_image(os.path.join(target_directory, story.name + ".svg"), story, report_url)
+
+
+def parse_behavior_data(data):
+    for story_data in (jq.compile(
+            '.children[].children | select(. != null ) | .[] | select(.children!=null) |.children[] | select (.children != null)')
+            .input(text=data)):
+        yield Story(**story_data)
 
 
 def list_of_files():
