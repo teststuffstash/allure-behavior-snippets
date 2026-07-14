@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "allure-behavior-snippets"
-version = "0.2.0"
+version = "0.3.0"
 description = "Create image with tests for each Allure behavior"
 authors = ["Your Name <you@example.com>"]
 license = "Apache License"

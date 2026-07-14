@@ -22,6 +22,17 @@ def test_creates_required_files(images_directory):
     main.generate_image_per_story("allure-report/data/behaviors.json", "images")
     files = os.listdir('images')
     assert {'EXAMPLE.svg', "Get a single user's data.svg", "Get all user's data.svg", "Get a post.svg"} <= set(files)
+    assert {'EXAMPLE.md', "Get a single user's data.md", "Get all user's data.md", "Get a post.md"} <= set(files)
+
+
+def test_markdown_snippet_matches_svg_shape(images_directory):
+    main.generate_image_per_story("allure-report/data/behaviors.json", "images",
+                                  report_url="http://localhost:8081/#behaviors/")
+    with open("images/Get a post.md") as f:
+        lines = f.read().splitlines()
+    # one list line per test: icon + linked name, nothing else (no extra columns)
+    assert all(line.startswith(("- ✓ [", "- ❌ [")) for line in lines)
+    assert all("](http://localhost:8081/#behaviors/" in line for line in lines)
 
 
 def test_parse_behavior_data_empty():

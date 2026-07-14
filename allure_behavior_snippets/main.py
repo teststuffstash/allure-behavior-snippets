@@ -47,11 +47,17 @@ class Story:
         self.children = [Test(**child) for child in self.children]
 
 
+CHECKMARK = "✓"  # https://en.wikipedia.org/wiki/Check_mark
+CROSSMARK = "❌"  # https://en.wikipedia.org/wiki/X_mark
+
+
 def generate_image_per_story(filename, target_directory, report_url=None):
     with open(filename, 'r') as file:
         data = file.read()
     for story in parse_behavior_data(data):
-        generate_svgwrite_image(os.path.join(target_directory, story.name + ".svg"), story, report_url)
+        base = os.path.join(target_directory, story.name)
+        generate_svgwrite_image(base + ".svg", story, report_url)
+        generate_markdown_snippet(base + ".md", story, report_url)
 
 
 def parse_behavior_data(data):
@@ -76,19 +82,27 @@ def list_of_files():
     yield from p.glob('*-result.json')
 
 
+def generate_markdown_snippet(filename: str, story: Story, report_url: str):
+    """The SVG's exact shape as transcludable markdown (e.g. mkdocs pymdownx.snippets):
+    one list line per test — icon + name, linked to the test in the report."""
+    lines = [
+        f"- {CHECKMARK if child.status == 'passed' else CROSSMARK} "
+        f"[{child.name}]({report_url}{child.parentUid}/{child.uid})"
+        for child in story.children
+    ]
+    Path(filename).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def generate_svgwrite_image(filename: str, story: Story, report_url: str):
-    base_url = 'http://localhost:8081/#behaviors/'
     font_size = 14
     names = [child.name for child in story.children]
-    checkmark = "✓"  # https://en.wikipedia.org/wiki/Check_mark
-    crossmark = "❌"  # https://en.wikipedia.org/wiki/X_mark
 
     width = font_size * max(len(name) for name in names)
     height = (font_size + 8) * len(names)
     dwg = svgwrite.Drawing(filename, size=(f"{width}px", f"{height}px"),
                            profile='tiny')
     for index, child in enumerate(story.children, start=1):
-        icon = checkmark if child.status == 'passed' else crossmark
+        icon = CHECKMARK if child.status == 'passed' else CROSSMARK
         link = container.Hyperlink(f"{report_url}{child.parentUid}/{child.uid}")
         link.add(
             dwg.text(f"{icon} {child.name}", insert=(0, index * 20), font_size=f"{font_size}px",
