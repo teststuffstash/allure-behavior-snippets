@@ -1,10 +1,10 @@
 import argparse
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
-import jq
 import svgwrite
 from svgwrite import container
 
@@ -55,10 +55,20 @@ def generate_image_per_story(filename, target_directory, report_url=None):
 
 
 def parse_behavior_data(data):
-    for story_data in (jq.compile(
-            '.children[].children | select(. != null ) | .[] | select(.children!=null) |.children[] | select (.children != null)')
-            .input(text=data)):
-        yield Story(**story_data)
+    # Stories are the third-level nodes that themselves have children:
+    # behaviors -> epic -> feature -> story (leaf tests hang off the story).
+    # Nodes missing 'children' at any level (e.g. a test without an epic)
+    # are skipped. CLI equivalent for poking at a report by hand:
+    #   jq '.children[].children | select(. != null) | .[]
+    #       | select(.children != null) | .children[]
+    #       | select(.children != null)' behaviors.json
+    if not data.strip():
+        return
+    for epic in json.loads(data)["children"]:
+        for feature in epic.get("children") or []:
+            for story_data in feature.get("children") or []:
+                if story_data.get("children") is not None:
+                    yield Story(**story_data)
 
 
 def list_of_files():

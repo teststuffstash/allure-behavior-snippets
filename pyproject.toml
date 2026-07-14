@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "allure-behavior-snippets"
-version = "0.1.0"
+version = "0.2.0"
 description = "Create image with tests for each Allure behavior"
 authors = ["Your Name <you@example.com>"]
 license = "Apache License"
@@ -8,12 +8,14 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-jq = "1.4.1"
-svgwrite = "1.4.3"
+svgwrite = ">=1.4.3"
 
 
 [tool.poetry.group.dev.dependencies]
-pytest-playwright = "0.4.2"
+pytest-playwright = "^0.8.0"
+# Exact pin: must match the mcr.microsoft.com/playwright/python image tag
+# in tests/Dockerfile — browsers are baked into that image per version.
+playwright = "1.61.0"
 pytest-playwright-snapshot = "^1.0"
 
 [build-system]

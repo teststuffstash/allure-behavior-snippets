@@ -7,13 +7,13 @@ services:
       - "./tests/allure-report/data/behaviors.json:/data/behaviors.json"
       - "./images:/data/images"
   snippets-server:
-    image: nginx:1.25.1-alpine
+    image: nginx:1.29-alpine
     ports:
       - "8080:80"
     volumes:
       - "./images:/usr/share/nginx/html:ro"
   allure-report:
-    image: nginx:1.25.1-alpine
+    image: nginx:1.29-alpine
     ports:
       - "8081:80"
     volumes:

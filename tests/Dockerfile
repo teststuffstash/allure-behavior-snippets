@@ -1,40 +1,25 @@
-#playwright is not supported on alpine
-FROM python:3.11.5-alpine3.18 as base
+#playwright is not supported on alpine, so tests run on the playwright ubuntu image
+FROM python:3.13-alpine AS exporter
 
-ENV PYTHONFAULTHANDLER=1 \
-    PYTHONHASHSEED=random \
-    PYTHONUNBUFFERED=1
+ENV POETRY_VERSION=2.2.1
 
 WORKDIR /app
 
-FROM base as builder
-
-ENV PIP_DEFAULT_TIMEOUT=100 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1 \
-    POETRY_VERSION=1.6.1
-
-RUN pip install "poetry==$POETRY_VERSION"
-RUN python -m venv /venv
+RUN pip install "poetry==$POETRY_VERSION" poetry-plugin-export
 
 COPY pyproject.toml poetry.lock ./
 RUN poetry export -f requirements.txt --with=dev > requirements.txt
 
-
-FROM mcr.microsoft.com/playwright/python:v1.38.0-jammy
+# Tag must match the exact playwright pin in pyproject.toml — the browsers
+# baked into this image only work with the same playwright package version.
+FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
 
 ENV TZ=UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN apt update && \
-    apt install -y software-properties-common gpg-agent && \
-    add-apt-repository --yes ppa:deadsnakes/ppa && \
-    apt install -y python3.11 python3.11-venv && \
-    python3.11 -m ensurepip
-
 WORKDIR /app
-COPY --from=builder /app/requirements.txt ./
-RUN python3.11 -m pip install -r requirements.txt
+COPY --from=exporter /app/requirements.txt ./
+RUN python3 -m venv /venv && /venv/bin/pip install -r requirements.txt
 
 COPY allure_behavior_snippets ./allure_behavior_snippets
 COPY tests ./tests
