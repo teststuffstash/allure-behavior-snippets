@@ -19,7 +19,10 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 WORKDIR /app
 COPY --from=exporter /app/requirements.txt ./
-RUN python3 -m venv /venv && /venv/bin/pip install -r requirements.txt
+# noble's python3.12 ships without ensurepip; venv needs python3-venv
+RUN apt-get update && apt-get install -y --no-install-recommends python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /venv && /venv/bin/pip install -r requirements.txt
 
 COPY allure_behavior_snippets ./allure_behavior_snippets
 COPY tests ./tests
