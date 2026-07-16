@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Overrides ONLY — classification/lanes come from the platform policy (homelab .github/renovate-global.json, applied via RENOVATE_CONFIG_FILE; a repo needs no renovate.json to be classified). This file exists for one repo-specific constraint: the pypi `playwright` EXACT pin must match the mcr.microsoft.com/playwright/python image tag in tests/Dockerfile (browsers are baked into that image per version) — the two must never bump independently.",
+  "packageRules": [
+    {
+      "description": "playwright lockstep: the pypi pin + the playwright/python docker tag move as ONE grouped PR (all update types — grouping only; lane labels still come from the global rules).",
+      "matchPackageNames": ["playwright", "mcr.microsoft.com/playwright/python"],
+      "groupName": "playwright lockstep"
+    }
+  ]
+}
