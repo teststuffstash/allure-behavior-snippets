@@ -1,0 +1,15 @@
+# Merge-path caller (homelab FU-041, docs/agents/merge-path.md): keeps the oldest armed+green PR
+# up-to-date with main so auto-merge can fire. Thin caller → the reusable org workflow in homelab.
+# Added for stack-onboarding consistency (this repo rides the oracle stack claim as context-only;
+# homelab agents-registration-lint requires the callers on every stack repo). NB default branch
+# here is MAIN, not master.
+name: update-pr-branch
+on:
+  push: { branches: [main] }
+  schedule: [{ cron: "*/15 * * * *" }]
+  workflow_dispatch: {}
+concurrency: { group: update-pr-branch, cancel-in-progress: false }
+jobs:
+  update:
+    uses: teststuffstash/homelab/.github/workflows/update-pr-branch.reusable.yml@master
+    secrets: inherit
