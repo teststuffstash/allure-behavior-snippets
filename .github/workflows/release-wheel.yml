@@ -1,0 +1,25 @@
+# Release a wheel per tag (v0.3.1+). Why: the tool's real consumers are DAEMONLESS CI jobs
+# (oracle-fleet allure-publish runs on ARC ephemeral runners with no docker), so the ghcr
+# image is unrunnable where the tool executes and consumers fell back to git-clone-at-tag.
+# A wheel is the right artifact for them: one cacheable file, deps resolve with it.
+# Existing tags and ghcr package tags are UNTOUCHED (operator ruling 2026-09-02): this
+# workflow fires only on tags pushed after it landed; docker-publish.yml continues as-is.
+name: release-wheel
+on:
+  push:
+    tags: [ 'v*.*.*' ]
+permissions:
+  contents: write
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build wheel + sdist
+        run: pipx run build
+      - name: create release + attach artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag \
+            || gh release upload "$GITHUB_REF_NAME" dist/* --clobber
