@@ -329,3 +329,127 @@ def test_phase_of_and_thread_value():
     # top-5 cap and count-then-name ordering
     recs = [{"thread_broken": list("abcdef")}] + [{"thread_broken": ["f"]}] * 2
     assert evidence.thread_summary(recs).endswith("broken: f(3), a(1), b(1), c(1), d(1)")
+
+
+# ---------------------------------------------------------------- spec join (--spec)
+
+SPEC_PAGE = """# page
+
+### OTHER-RULE
+
+| description | x |
+|---|---|
+| other row | `1` |
+
+### ING-RT-JOIN ⚖ heading may carry a tail
+
+Prose, then a legend.
+
+| description | built_from_env | rc | parsed_from |
+|---|---|---|---|
+| exact row ⚖ | `C` | `0` | `[A]` |
+| substring row ⚖ (a long parenthetical the case does not carry) | `—` | `—` | `null` |
+| unproven row | `C` | `0` | per [X](x.md) |
+| mismatch row | `C` | `0` | `[A, B]` |
+
+⚖ door rows are prose here.
+
+| door | fragment |
+|---|---|
+| Dockerfile carries the stamp | `ARG X` |
+
+<details><summary>Evidence</summary>
+
+--8<-- "ING-RT-JOIN.md"
+
+</details>
+
+### NEXT-RULE
+
+| description | y |
+|---|---|
+| nope | `2` |
+"""
+
+JOIN = "ING-RT-JOIN"
+
+
+def _join_results():
+    return [
+        _result("test_j[mismatch row]", "tests.test_j#test_j", "passed", story=JOIN,
+                params={"built_from_env": "'C'", "rc": "0", "parsed_from": "'[A]'"}),
+        _result("test_j[exact row ⚖]", "tests.test_j#test_j", "passed", story=JOIN,
+                params={"built_from_env": "'C'", "rc": "0", "parsed_from": "'[A]'"}),
+        _result("test_j[substring row ⚖]", "tests.test_j#test_j", "failed", story=JOIN,
+                params={"parsed_from": "'null'"}, message="boom"),
+        _result("test_j[Dockerfile carries the stamp]", "tests.test_j#test_j", "passed", story=JOIN,
+                params={"door": "'Dockerfile'", "fragment": "'ARG X'"}),
+        _result("test_j[an unspecified door]", "tests.test_j#test_j", "passed", story=JOIN,
+                params={"door": "'e2e.sh'", "fragment": "'--build-arg'"}),
+    ]
+
+
+def test_spec_tables_scoped_to_the_rule_heading():
+    tables = evidence.spec_tables(SPEC_PAGE, JOIN)
+    assert [h for h, _ in tables] == [["description", "built_from_env", "rc", "parsed_from"],
+                                      ["door", "fragment"]]
+    assert len(tables[0][1]) == 4 and len(tables[1][1]) == 1
+    assert evidence.spec_tables(SPEC_PAGE, "NEXT-RULE")[0][1] == [["nope", "`2`"]]
+    assert evidence.spec_tables(SPEC_PAGE, "ABSENT") == []
+
+
+def test_norm_cell_and_match_case():
+    assert evidence.norm_cell("`C`") == evidence.norm_cell("'C'") == "C"
+    assert evidence.norm_cell("`a`, `b`") == evidence.norm_cell("'a, b'")
+    assert evidence.norm_cell(None) == ""
+    recs = [{"case": "Exact Row ⚖"}, {"case": "exact row ⚖"}]
+    assert evidence.match_case("`exact row ⚖`", recs) == ("exact", [recs[1]])
+    assert evidence.match_case("exact row ⚖ (tail)", recs)[0] == "substring"
+    assert evidence.match_case("nothing", recs) == ("none", [])
+
+
+def test_joined_fragment_is_the_spec_table_in_spec_order(tmp_path):
+    ev = evidence.build_evidence(_join_results())
+    spec = {JOIN: evidence.spec_tables(SPEC_PAGE, JOIN)}
+    evidence.write_outputs(ev, tmp_path, rules=[JOIN], spec=spec)
+    md = (tmp_path / f"{JOIN}.md").read_text(encoding="utf-8")
+    lines = md.splitlines()
+    # header = status + the spec's own columns; rows in SPEC order, not alphabetical
+    assert lines[0] == "| status | description | built_from_env | rc | parsed_from |"
+    rows = [l for l in lines[2:6]]
+    assert [r.split(" | ")[1] for r in rows] == [
+        "exact row ⚖", "substring row ⚖ (a long parenthetical the case does not carry)",
+        "unproven row", "mismatch row"]
+    assert rows[0].startswith("| ✓ |") and "`C`" in rows[0]          # equal → spec cell as authored
+    assert rows[1].startswith("| ❌ |") and "| `—` | `—` | `null` |" in rows[1]   # `—` cells untouched
+    assert rows[2].startswith("| ∅ |") and "per [X](x.md)" in rows[2]  # unproven, prose cell kept
+    assert rows[3].startswith("| ≠ |") and "`[A, B]` ⇢ '[A]'" in rows[3]  # spec ⇢ actual
+    # second spec table joined too; the door row is claimed, so only the other door is unspecified
+    assert "| ✓ | Dockerfile carries the stamp | `ARG X` |" in md
+    assert "_Not in the spec:_" in md
+    assert "an unspecified door" in md and "Dockerfile carries the stamp" in md.split("_Not in the spec:_")[0]
+    assert "| status | case | door | fragment |" in md.split("_Not in the spec:_")[1]
+    assert "attachments" not in md
+    assert "_spec: 5 rows · 4 proven (3 exact, 1 substring) · 1 unproven ∅ · 1 cells ≠ · 1 not in the spec_" in md
+    # digest carries the three mechanical codes
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert f"- ROW_UNPROVEN {JOIN} unproven row:" in digest
+    assert f"- CELL_MISMATCH {JOIN} mismatch row: parsed_from spec `[A, B]` ⇢ actual '[A]'" in digest
+    assert f"- ROW_UNSPECIFIED {JOIN} an unspecified door:" in digest
+    assert f"- FAILED {JOIN} substring row ⚖" in digest
+
+
+def test_spec_rule_with_no_records_is_all_unproven(tmp_path):
+    ev = evidence.build_evidence(_join_results())
+    spec = {"NEXT-RULE": evidence.spec_tables(SPEC_PAGE, "NEXT-RULE")}
+    evidence.write_outputs(ev, tmp_path, rules=["NEXT-RULE"], spec=spec)
+    md = (tmp_path / "NEXT-RULE.md").read_text(encoding="utf-8")
+    assert "| ∅ | nope | `2` |" in md
+    assert "1 unproven ∅" in md
+
+
+def test_rule_without_spec_tables_keeps_the_evidence_table(tmp_path):
+    ev = evidence.build_evidence(_join_results())
+    evidence.write_outputs(ev, tmp_path, rules=[JOIN], spec={})
+    md = (tmp_path / f"{JOIN}.md").read_text(encoding="utf-8")
+    assert md.startswith("| status | case |") and "attachments" in md

@@ -5,7 +5,8 @@ per story label (= rule ID), a GFM table whose columns are the tests' parameter
 names, plus one ``evidence.json`` a reviewer can grep with jq.
 
     python3 -m allure_behavior_snippets.evidence --results DIR [--results DIR2 ...] \
-        --out OUTDIR [--rules A,B,C] [--baseline evidence.json] [--report-url URL]
+        --out OUTDIR [--rules A,B,C] [--baseline evidence.json] [--report-url URL] \
+        [--spec PAGE.md]
 
 stdlib only.
 """
@@ -555,8 +556,9 @@ def hygiene_lines(rule, evidence):
     return [totals, ""] + (out or ["- none"])
 
 
-def render_digest(rules, evidence, baseline=None, report_url=None):
+def render_digest(rules, evidence, baseline=None, report_url=None, spec=None):
     lines = []
+    spec = spec or {}
     for rule in rules:
         lines.append(f"## {rule}")
         lines.append("")
@@ -591,7 +593,10 @@ def render_digest(rules, evidence, baseline=None, report_url=None):
             lines.append("")
         lines.append("**Findings:**")
         lines.append("")
-        lines += findings(rule, evidence, baseline) or ["- none"]
+        found = findings(rule, evidence, baseline)
+        if spec.get(rule):
+            found += spec_findings(rule, spec[rule], evidence["rules"].get(rule, []))
+        lines += found or ["- none"]
         lines.append("")
         lines.append("**Hygiene:**")
         lines.append("")
@@ -600,23 +605,241 @@ def render_digest(rules, evidence, baseline=None, report_url=None):
     return lines
 
 
+# ---------------------------------------------------------------- spec join
+#
+# ``--spec PATH``: the spec page is the table, the evidence annotates it. For each rule the
+# GFM tables under its ``### RULE`` heading are joined to the records by the description
+# cell == record case (exact, then case-insensitive substring — the reviewer's ROW_UNPROVEN
+# predicate) and rendered in SPEC ORDER with a leading status column: ✓/❌/⚠ from the
+# record, ∅ for a spec row with no evidence (never dropped), ≠ when a spec cell and the
+# record's same-named parameter disagree (the cell then reads ``spec ⇢ actual``). Records
+# matching no spec row are listed under ``_Not in the spec:_`` (ROW_UNSPECIFIED).
+
+_HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
+_TABLE_SEP = re.compile(r"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
+STATUS_UNPROVEN = "∅"
+STATUS_MISMATCH = "≠"
+
+
+def _split_row(line):
+    """Cells of a GFM table row (``\\|`` kept as a literal pipe)."""
+    s = line.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|") and not s.endswith("\\|"):
+        s = s[:-1]
+    cells = re.split(r"(?<!\\)\|", s)
+    return [c.strip().replace("\\|", "|") for c in cells]
+
+
+def spec_tables(text, rule):
+    """``[(header, rows)]`` — every GFM table under the heading whose text is ``rule`` (or
+    starts with it), up to the next heading of any level. ``rows`` are lists of cells."""
+    lines = text.splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        m = _HEADING.match(line)
+        if m and (m.group(2) == rule or m.group(2).startswith(rule + " ")):
+            start = i + 1
+            break
+    if start is None:
+        return []
+    tables = []
+    i = start
+    while i < len(lines):
+        line = lines[i]
+        if _HEADING.match(line):
+            break
+        if line.lstrip().startswith("|") and i + 1 < len(lines) and _TABLE_SEP.match(lines[i + 1]):
+            header = _split_row(line)
+            rows = []
+            i += 2
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                rows.append(_split_row(lines[i]))
+                i += 1
+            tables.append((header, rows))
+            continue
+        i += 1
+    return tables
+
+
+def norm_cell(value):
+    """Comparison form of a spec cell or a param value: backticks gone, one pair of
+    surrounding quotes gone, whitespace collapsed. ``None`` → ''."""
+    if value is None:
+        return ""
+    s = str(value).replace("`", "").strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "'\"":
+        s = s[1:-1]
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def match_case(description, records):
+    """Records whose case matches the description: exact (normalised) first; else
+    case-insensitive substring either way. Returns ``(kind, [records])`` with kind in
+    ``exact`` / ``substring`` / ``none``."""
+    d = norm_cell(description)
+    exact = [r for r in records if norm_cell(r["case"]) == d]
+    if exact:
+        return "exact", exact
+    dl = d.lower()
+    sub = [r for r in records
+           if norm_cell(r["case"]).lower() and
+           (norm_cell(r["case"]).lower() in dl or dl in norm_cell(r["case"]).lower())]
+    if sub:
+        return "substring", sub
+    return "none", []
+
+
+def _worst(records):
+    return max(records, key=lambda r: STATUS_RANK.get(r["status"], 2))
+
+
+def join_table(header, rows, records):
+    """One spec table joined to records → ``(joined_rows, matched_records, stats)``.
+    Each joined row: ``{"status", "cells", "record", "kind", "mismatches"}`` where
+    ``cells`` are the rendered cells (spec text, or ``spec ⇢ actual`` on a mismatch)."""
+    stats = {"rows": len(rows), "exact": 0, "substring": 0, "unproven": 0, "mismatch_cells": 0}
+    joined, matched = [], []
+    for row in rows:
+        desc = row[0] if row else ""
+        kind, recs = match_case(desc, records)
+        stats[kind if kind != "none" else "unproven"] += 1
+        matched += recs
+        if not recs:
+            joined.append({"status": STATUS_UNPROVEN, "cells": list(row), "record": None,
+                           "kind": kind, "mismatches": []})
+            continue
+        rec = _worst(recs)
+        cells, mismatches = [desc], []
+        for name, spec_cell in zip(header[1:], row[1:]):
+            if name in rec["params"]:
+                actual = rec["params"][name]
+                if norm_cell(spec_cell) == norm_cell(actual):
+                    cells.append(f"**{spec_cell}**" if is_threaded(rec, name) else spec_cell)
+                else:
+                    mismatches.append((name, spec_cell, actual))
+                    cells.append(f"{spec_cell} ⇢ {cell(actual)}")
+            else:
+                cells.append(spec_cell)
+        cells += list(row[len(header):])
+        stats["mismatch_cells"] += len(mismatches)
+        status = STATUS_ICON.get(rec["status"], rec["status"])
+        if mismatches and rec["status"] == "passed":
+            status = STATUS_MISMATCH
+        joined.append({"status": status, "cells": cells, "record": rec, "kind": kind,
+                       "mismatches": mismatches})
+    return joined, matched, stats
+
+
+def _unspecified_lines(records, max_cell=MAX_CELL):
+    """Evidence-only table for records no spec row claims: status · case · their params."""
+    param_names = param_columns(records)
+    cols = ["status", "case"] + param_names
+    lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
+    for r in records:
+        row = [STATUS_ICON.get(r["status"], r["status"]), cell(r["case"], max_cell)]
+        row += [_param_cell(r, k, max_cell) for k in param_names]
+        lines.append("| " + " | ".join(row) + " |")
+    return lines
+
+
+def join_rule(tables, records):
+    """Join every table of a rule; ``(per_table, unspecified, stats)``."""
+    per_table, claimed = [], []
+    stats = {"rows": 0, "exact": 0, "substring": 0, "unproven": 0, "mismatch_cells": 0}
+    for header, rows in tables:
+        joined, matched, st = join_table(header, rows, records)
+        per_table.append((header, joined))
+        claimed += matched
+        for k in stats:
+            stats[k] += st[k]
+    ids = {id(r) for r in claimed}
+    unspecified = [r for r in records if id(r) not in ids]
+    stats["unspecified"] = len(unspecified)
+    return per_table, unspecified, stats
+
+
+def render_joined(tables, records, run, report_url=None):
+    """The spec table(s) annotated with verdicts, the not-in-spec rows, a join line and
+    the run footer."""
+    per_table, unspecified, stats = join_rule(tables, records)
+    lines = []
+    for header, joined in per_table:
+        cols = ["status"] + header
+        lines += ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
+        for j in joined:
+            # spec cells are printed as authored (no cap — the spec already bounds them)
+            lines.append("| " + " | ".join([j["status"]] + [c.replace("\n", " ") for c in j["cells"]]) + " |")
+        lines.append("")
+    if unspecified:
+        lines += ["_Not in the spec:_", ""] + _unspecified_lines(unspecified) + [""]
+    proven = stats["rows"] - stats["unproven"]
+    lines.append(f"_spec: {stats['rows']} rows · {proven} proven ({stats['exact']} exact, "
+                 f"{stats['substring']} substring) · {stats['unproven']} unproven ∅ · "
+                 f"{stats['mismatch_cells']} cells ≠ · {stats['unspecified']} not in the spec_")
+    lines += ["", _footer(run, report_url)]
+    return lines
+
+
+def spec_findings(rule, tables, records):
+    """ROW_UNPROVEN / CELL_MISMATCH / ROW_UNSPECIFIED lines for the digest."""
+    per_table, unspecified, _ = join_rule(tables, records)
+    out = []
+    for _, joined in per_table:
+        for j in joined:
+            desc = j["cells"][0] if j["cells"] else ""
+            if j["record"] is None:
+                out.append(f"- ROW_UNPROVEN {rule} {cell(desc)}: spec row has no evidence case "
+                           f"(neither exact nor substring matched)")
+            for name, spec_cell, actual in j["mismatches"]:
+                out.append(f"- CELL_MISMATCH {rule} {cell(desc)}: {name} spec {cell(spec_cell)} "
+                           f"⇢ actual {cell(actual)}")
+    for r in unspecified:
+        out.append(f"- ROW_UNSPECIFIED {rule} {r['case']}: evidence row matches no spec row")
+    return out
+
+
 # ---------------------------------------------------------------- driver
 
-def write_outputs(evidence, out_dir, rules=None, baseline=None, report_url=None):
+def write_outputs(evidence, out_dir, rules=None, baseline=None, report_url=None, spec=None):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "evidence.json").write_text(
         json.dumps(evidence, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     written = ["evidence.json"]
+    spec = spec or {}
     for rule, recs in evidence["rules"].items():
-        (out / f"{rule}.md").write_text(
-            "\n".join(render_table(recs, evidence["run"], report_url)) + "\n", encoding="utf-8")
+        if spec.get(rule):
+            body = render_joined(spec[rule], recs, evidence["run"], report_url)
+        else:
+            body = render_table(recs, evidence["run"], report_url)
+        (out / f"{rule}.md").write_text("\n".join(body) + "\n", encoding="utf-8")
         written.append(f"{rule}.md")
+    # a rule the spec lists but no record carries: the joined table is all ∅
+    for rule, tables in spec.items():
+        if tables and rule not in evidence["rules"]:
+            (out / f"{rule}.md").write_text(
+                "\n".join(render_joined(tables, [], evidence["run"], report_url)) + "\n",
+                encoding="utf-8")
+            written.append(f"{rule}.md")
     if rules:
         (out / "digest.md").write_text(
-            "\n".join(render_digest(rules, evidence, baseline, report_url)) + "\n", encoding="utf-8")
+            "\n".join(render_digest(rules, evidence, baseline, report_url, spec)) + "\n",
+            encoding="utf-8")
         written.append("digest.md")
     return written
+
+
+def load_spec(path, rules):
+    """``{rule: tables}`` for every rule with at least one table under its heading."""
+    text = Path(path).read_text(encoding="utf-8")
+    out = {}
+    for rule in rules or []:
+        tables = spec_tables(text, rule)
+        if tables:
+            out[rule] = tables
+    return out
 
 
 def cli(argv=None):
@@ -628,6 +851,9 @@ def cli(argv=None):
     ap.add_argument("--baseline", default=None, metavar="evidence.json",
                     help="previous evidence.json for the digest delta")
     ap.add_argument("--report-url", default=None, help="Allure report URL (footer only)")
+    ap.add_argument("--spec", default=None, metavar="PAGE.md",
+                    help="spec page: for each --rules rule, the tables under its `### RULE` "
+                         "heading are joined to the evidence and emitted as the fragment")
     args = ap.parse_args(argv)
     env = load_environment(args.results)
     evidence = build_evidence(load_results(args.results), env, results_dirs=args.results)
@@ -635,7 +861,10 @@ def cli(argv=None):
     if args.baseline:
         baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
     rules = [r.strip() for r in args.rules.split(",") if r.strip()] if args.rules else None
-    written = write_outputs(evidence, args.out, rules, baseline, args.report_url)
+    spec = load_spec(args.spec, rules) if args.spec else None
+    if args.spec and not rules:
+        ap.error("--spec needs --rules (which headings to join)")
+    written = write_outputs(evidence, args.out, rules, baseline, args.report_url, spec)
     n = sum(len(v) for v in evidence["rules"].values())
     print(f"{n} records across {len(evidence['rules'])} rules → {args.out} ({len(written)} files)")
 
