@@ -107,7 +107,7 @@ def test_digest_predicates_and_delta(results_dir, tmp_path):
         old("gone", "tests.test_build#test_gone"),                          # not in run
         old("lost_label", "tests.test_build#test_lost_label"),              # ran, no story
         old("elsewhere", "tests.test_other#test_elsewhere"),                # module not run
-    ]}}
+    ], "ING-RT-SPLIT-FROM": [old("bare", "tests.test_build#test_bare")]}}   # bare now under RULE
     out = tmp_path / "out"
     evidence.write_outputs(ev, out, rules=[RULE, "ING-RT-NOPE"], baseline=baseline)
     text = (out / "digest.md").read_text(encoding="utf-8")
@@ -122,11 +122,18 @@ def test_digest_predicates_and_delta(results_dir, tmp_path):
     assert "VANISHED" not in text.split("gone:")[1], "out-of-scope + unlabelled never VANISH"
     assert "- added: two entries → newest wins, zeta" in text
     assert ("- removed: elsewhere, gone, lost_label\n"
+            "  - relabelled (now under another rule): none\n"
             "  - out-of-scope (file not run): elsewhere\n"
             "  - unlabelled (ran, no rule): lost_label\n"
             "  - gone (not in run): gone\n") in text
     assert "  - pipe|case: passed → failed" in text
     assert "- none" not in text
+    # a case that moved rule (spec split): classified, never VANISHED, no finding
+    split = evidence.render_digest(["ING-RT-SPLIT-FROM"], ev, baseline)
+    assert "  - relabelled (now under ING-RT-BUILD-CORPUS): bare" in split
+    assert not any("VANISHED" in l or "UNLABELLED" in l for l in split)
+    assert evidence.classify_removed("ING-RT-SPLIT-FROM", ev, baseline, ["bare"]) == {
+        "relabelled": [("bare", RULE)], "out-of-scope": [], "unlabelled": [], "gone": []}
     # digest tables: one per module, full cells, no row elision
     assert "### tests.test_build\n\n| status | case | world | intent | act | expect | attachments | failure |" in text
     assert "### tests.test_delta\n\n| status | case | desc | attachments |\n" in text

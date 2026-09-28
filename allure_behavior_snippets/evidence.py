@@ -271,6 +271,7 @@ def delta(rule, evidence, baseline):
 
 
 REMOVED_CLASSES = (
+    ("relabelled", "relabelled (now under another rule)"),
     ("out-of-scope", "out-of-scope (file not run)"),
     ("unlabelled", "unlabelled (ran, no rule)"),
     ("gone", "gone (not in run)"),
@@ -278,9 +279,18 @@ REMOVED_CLASSES = (
 
 
 def classify_removed(rule, evidence, baseline, removed):
-    """Split removed cases: baseline file not in run.files → out-of-scope; a result with
-    that test name (or case) ran at HEAD without a story → unlabelled; else gone."""
+    """Split removed cases: the case (or its fullName) sits under a different rule at
+    HEAD → relabelled (a spec split moves rows by design; value = (case, new rule));
+    baseline file not in run.files → out-of-scope; a result with that test name (or
+    case) ran at HEAD without a story → unlabelled; else gone."""
     run = evidence.get("run", {})
+    elsewhere = {}  # case / fullName -> rule it now sits under
+    for other, recs in evidence.get("rules", {}).items():
+        if other == rule:
+            continue
+        for r in recs:
+            elsewhere.setdefault(r.get("case"), other)
+            elsewhere.setdefault(r.get("test"), other)
     files = run.get("files")
     unlabelled = run.get("unlabelled") or []
     unlabelled_cases = {case_of_full(u) for u in unlabelled}
@@ -290,7 +300,11 @@ def classify_removed(rule, evidence, baseline, removed):
     out = {key: [] for key, _ in REMOVED_CLASSES}
     for c in removed:
         recs = old.get(c, [])
-        if files is not None and recs and all(r.get("file") and r["file"] not in files for r in recs):
+        new_rule = elsewhere.get(c) or next(
+            (elsewhere[r["test"]] for r in recs if r.get("test") in elsewhere), None)
+        if new_rule:
+            out["relabelled"].append((c, new_rule))
+        elif files is not None and recs and all(r.get("file") and r["file"] not in files for r in recs):
             out["out-of-scope"].append(c)
         elif c in unlabelled_cases or any(r.get("test") in unlabelled for r in recs):
             out["unlabelled"].append(c)
@@ -353,7 +367,14 @@ def render_digest(rules, evidence, baseline=None, report_url=None):
             lines.append(f"- removed: {', '.join(removed) if removed else 'none'}")
             if removed:
                 classes = classify_removed(rule, evidence, baseline, removed)
-                for key, label in REMOVED_CLASSES:
+                moved = {}
+                for c, new_rule in classes["relabelled"]:
+                    moved.setdefault(new_rule, []).append(c)
+                for new_rule in sorted(moved):
+                    lines.append(f"  - relabelled (now under {new_rule}): {', '.join(moved[new_rule])}")
+                if not moved:
+                    lines.append("  - relabelled (now under another rule): none")
+                for key, label in REMOVED_CLASSES[1:]:
                     lines.append(f"  - {label}: {', '.join(classes[key]) if classes[key] else 'none'}")
             if flips:
                 lines.append("- flips:")
