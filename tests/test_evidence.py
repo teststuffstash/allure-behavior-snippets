@@ -252,16 +252,26 @@ def test_hygiene_metrics_and_block(results_dir, tmp_path):
         "cases 6 · attachments 11 · bytes 1234 · max depth 2",
         "",
         f"- STEP_FLAT {HYG} flat: steps_total=0 (threshold > 0)",
-        f"- STEP_NOISE {HYG} noisy: steps_top=9 (threshold 8)",
+    ] + [f"- STEP_NOISE {HYG} {c}: steps outside given/when/then: `open` (threshold 0)"
+         for c in ("blank", "blob", "bulk", "clean")] + [
+        f"- STEP_NOISE {HYG} noisy: steps_top=9 (threshold 8), steps outside given/when/then: "
+        + ", ".join(f"`s{i}`" for i in range(9)) + " (threshold 0)",
+    ] + [f"- UNIT_ONLY_CANDIDATE {HYG} {c}: steps but no `when` step (threshold ≥ 1)"
+         for c in ("blank", "blob", "bulk", "clean", "noisy")] + [
         f"- ATTACH_BULK {HYG} bulk: attachments_total=9 (threshold 8)",
         f"- PARAM_BLOB {HYG} blob: param_max_len=500 (threshold 400)",
         f"- NAME_BLANK {HYG} blank: blank_names=`Attachment 3`, `verdict` (threshold 0)",
     ] + [f"- THREAD_BROKEN {HYG} {c}: {p} in no given/when/then step"
          for c, p in [("blank", "n"), ("blob", "payload"), ("bulk", "n"), ("clean", "n"),
                       ("flat", "n"), ("noisy", "n")]]
-    assert not any("clean" in l for l in block[:-6])
+    # "clean" is clean on every threshold code: only the phase codes name it (its one
+    # top-level step `open` is neither given/when/then, so it is STEP_NOISE + UNIT_ONLY_CANDIDATE)
+    assert [l for l in block if "clean" in l and not l.startswith(("- STEP_NOISE", "- UNIT_ONLY", "- THREAD"))] == []
+    # a step-less case is STEP_FLAT, never also UNIT_ONLY_CANDIDATE
+    assert not any("UNIT_ONLY_CANDIDATE" in l and " flat:" in l for l in block)
     # bytes threshold fires on its own; a bare record (no params/attachments) is never STEP_FLAT
     big = dict(by_case["clean"], case="big", thread_broken=[],
+               phases={"given": [], "when": ["when: x"], "then": [], "other": []},
                hygiene=dict(by_case["clean"]["hygiene"], attachment_bytes=262145))
     bare = dict(by_case["flat"], case="bare0", params={}, attachments=[], thread_broken=[])
     ev2 = {"run": {}, "rules": {"X": [big, bare]}}
@@ -298,7 +308,10 @@ def test_thread_phases_bolding_and_summary(results_dir, tmp_path):
     assert empty["thread"] == {} and empty["thread_broken"] == []
     # hygiene: THREAD_BROKEN only for (b), placed after NAME_BLANK
     block = evidence.hygiene_lines(THR, ev)
-    assert block[2:] == [f"- THREAD_BROKEN {THR} nowhere: door in no given/when/then step"]
+    assert block[2:] == [
+        f"- STEP_NOISE {THR} nowhere: steps outside given/when/then: `open` (threshold 0)",
+        f"- UNIT_ONLY_CANDIDATE {THR} nowhere: steps but no `when` step (threshold ≥ 1)",
+        f"- THREAD_BROKEN {THR} nowhere: door in no given/when/then step"]
     # colouring: the fully threaded cell is bold in the fragment and the digest, others plain
     out = tmp_path / "out"
     evidence.write_outputs(ev, out, rules=[THR])
@@ -415,13 +428,13 @@ def test_joined_fragment_is_the_spec_table_in_spec_order(tmp_path):
     md = (tmp_path / f"{JOIN}.md").read_text(encoding="utf-8")
     lines = md.splitlines()
     # header = status + the spec's own columns; rows in SPEC order, not alphabetical
-    assert lines[0] == "| status | description | built_from_env | rc | parsed_from |"
+    assert lines[0] == "| status | description | built_from_env | rc | parsed_from | attachments | test | threads |"
     rows = [l for l in lines[2:6]]
     assert [r.split(" | ")[1] for r in rows] == [
         "exact row ⚖", "substring row ⚖ (a long parenthetical the case does not carry)",
         "unproven row", "mismatch row"]
     assert rows[0].startswith("| ✓ |") and "`C`" in rows[0]          # equal → spec cell as authored
-    assert rows[1].startswith("| ❌ |") and "| `—` | `—` | `null` |" in rows[1]   # `—` cells untouched
+    assert rows[1].startswith("| ❌~ |") and "| `—` | `—` | `null` |" in rows[1]   # `—` cells untouched; ~ = substring match
     assert rows[2].startswith("| ∅ |") and "per [X](x.md)" in rows[2]  # unproven, prose cell kept
     assert rows[3].startswith("| ≠ |") and "`[A, B]` ⇢ '[A]'" in rows[3]  # spec ⇢ actual
     # second spec table joined too; the door row is claimed, so only the other door is unspecified
@@ -429,13 +442,19 @@ def test_joined_fragment_is_the_spec_table_in_spec_order(tmp_path):
     assert "_Not in the spec:_" in md
     assert "an unspecified door" in md and "Dockerfile carries the stamp" in md.split("_Not in the spec:_")[0]
     assert "| status | case | door | fragment |" in md.split("_Not in the spec:_")[1]
-    assert "attachments" not in md
-    assert "_spec: 5 rows · 4 proven (3 exact, 1 substring) · 1 unproven ∅ · 1 cells ≠ · 1 not in the spec_" in md
+    # trailing annotation columns: attachments count, test module (tests. prefix off), unthreaded params
+    assert rows[0].endswith("| 0 | test_j | unthreaded: built_from_env, rc, parsed_from |")
+    assert rows[1].endswith("| 0 | test_j | unthreaded: parsed_from |")
+    assert rows[2].endswith("| per [X](x.md) |  |  |  |")          # ∅ row: blank annotations
+    # the divider says what "not in the spec" means
+    assert "_Only table rows join; a row ruled in the section's prose joins once that prose becomes a table._" in md.split("_Not in the spec:_")[1]
+    assert "_spec: 5 rows · 4 proven (3 exact, 1 substring~) · 1 unproven ∅ · 1 cells ≠ · 1 not in the spec_" in md
+    assert "_scope: modules in this run — test_j (5 records for this rule)_" in md
     # digest carries the three mechanical codes
     digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
     assert f"- ROW_UNPROVEN {JOIN} unproven row:" in digest
     assert f"- CELL_MISMATCH {JOIN} mismatch row: parsed_from spec `[A, B]` ⇢ actual '[A]'" in digest
-    assert f"- ROW_UNSPECIFIED {JOIN} an unspecified door:" in digest
+    assert f"- ROW_UNSPECIFIED {JOIN} an unspecified door: evidence row matches no TABLE row (a ruling in section prose does not join)" in digest
     assert f"- FAILED {JOIN} substring row ⚖" in digest
 
 
@@ -453,3 +472,51 @@ def test_rule_without_spec_tables_keeps_the_evidence_table(tmp_path):
     evidence.write_outputs(ev, tmp_path, rules=[JOIN], spec={})
     md = (tmp_path / f"{JOIN}.md").read_text(encoding="utf-8")
     assert md.startswith("| status | case |") and "attachments" in md
+
+
+def test_norm_cell_reduces_links_and_module_short():
+    # a markdown link in a spec cell compares as its text; the rendered cell keeps the link
+    assert evidence.norm_cell("per [ING-RT-DELTA-MERGE](riigiteataja-delta.md#x)") == "per ING-RT-DELTA-MERGE"
+    assert evidence.norm_cell("`per [X](y)`") == evidence.norm_cell("'per X'")
+    assert evidence.module_short("tests.test_build_provenance#test_x") == "test_build_provenance"
+    assert evidence.module_short("pkg.mod") == "pkg.mod" and evidence.module_short(None) == ""
+
+
+def test_link_cell_joins_and_scope_names_modules_without_records(tmp_path):
+    recs = _join_results() + [
+        # the ∅ "unproven row" gets its record from another module; its link cell now matches
+        _result("test_d[unproven row]", "tests.test_d#test_d", "passed", story=JOIN,
+                params={"built_from_env": "'C'", "rc": "0", "parsed_from": "'per X'"}),
+        # a module in the run with no record for this rule (unlabelled) → listed with 0
+        _result("test_other", "tests.test_other#test_other", "passed", story=None),
+    ]
+    ev = evidence.build_evidence(recs)
+    spec = {JOIN: evidence.spec_tables(SPEC_PAGE, JOIN)}
+    evidence.write_outputs(ev, tmp_path, rules=[JOIN], spec=spec)
+    md = (tmp_path / f"{JOIN}.md").read_text(encoding="utf-8")
+    assert "| ✓ | unproven row | `C` | `0` | per [X](x.md) | 0 | test_d |" in md
+    assert "0 unproven ∅" in md
+    assert ("_scope: modules in this run — test_d (1 records for this rule) · "
+            "test_j (5 records for this rule) · test_other (0 records for this rule)_") in md
+
+
+def test_substring_mark_and_threads_column_on_the_row(tmp_path):
+    recs = [
+        _result("test_j[exact row ⚖]", "tests.test_j#test_j", "passed", story=JOIN,
+                params={"built_from_env": "'cafef00d'", "rc": "0", "parsed_from": "'[A]'"},
+                steps=[{"name": "Given: sha cafef00d", "status": "passed"},
+                       {"name": "ert-build cafef00d → corpus", "status": "passed"},
+                       {"name": "verdict: cafef00d in corpus_meta", "status": "passed"}]),
+        _result("test_j[substring row ⚖]", "tests.test_j#test_j", "passed", story=JOIN,
+                params={"parsed_from": "'null'"}),
+    ]
+    ev = evidence.build_evidence(recs)
+    spec = {JOIN: [(["description", "built_from_env", "rc", "parsed_from"],
+                    [["exact row ⚖", "`cafef00d`", "`0`", "`[A]`"],
+                     ["substring row ⚖ (tail)", "`—`", "`—`", "`null`"]])]}
+    evidence.write_outputs(ev, tmp_path, rules=[JOIN], spec=spec)
+    rows = (tmp_path / f"{JOIN}.md").read_text(encoding="utf-8").splitlines()[2:4]
+    # built_from_env threads all three phases → bold, not listed; rc and parsed_from are listed
+    assert rows[0].startswith("| ✓ | exact row ⚖ | **`cafef00d`** | `0` | `[A]` |")
+    assert rows[0].endswith("| 0 | test_j | unthreaded: rc, parsed_from |")
+    assert rows[1].startswith("| ✓~ | substring row ⚖ (tail) |")

@@ -532,8 +532,23 @@ def hygiene_lines(rule, evidence):
         if h["steps_total"] == 0 and (r.get("attachments") or r.get("params")):
             line("STEP_FLAT", r["case"], "steps_total=0 (threshold > 0)")
     for r, h in hyg:
+        reasons = []
         if h["steps_top"] > HYG_STEPS_TOP:
-            line("STEP_NOISE", r["case"], f"steps_top={h['steps_top']} (threshold {HYG_STEPS_TOP})")
+            reasons.append(f"steps_top={h['steps_top']} (threshold {HYG_STEPS_TOP})")
+        # a top-level step that is neither given / when / then is noise by the conventions'
+        # literal definition, whatever the count (the reviewer found one the count missed)
+        other = (r.get("phases") or {}).get("other") or []
+        if other:
+            names = ", ".join(f"`{cell(n, 40)}`" for n in other)
+            reasons.append(f"steps outside given/when/then: {names} (threshold 0)")
+        if reasons:
+            line("STEP_NOISE", r["case"], ", ".join(reasons))
+    for r, h in hyg:
+        # UNIT_ONLY pre-filter (not the judgment itself): the case has steps but none is the
+        # call under test, so no system boundary is named; the reviewer decides whether the
+        # rule needs one. A step-less case is STEP_FLAT's business, not flagged twice.
+        if h["steps_total"] > 0 and r.get("phases") is not None and not r["phases"].get("when"):
+            line("UNIT_ONLY_CANDIDATE", r["case"], "steps but no `when` step (threshold ≥ 1)")
     for r, h in hyg:
         over = []
         if h["attachment_bytes"] > HYG_ATTACH_BYTES:
@@ -619,6 +634,14 @@ _HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _TABLE_SEP = re.compile(r"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
 STATUS_UNPROVEN = "∅"
 STATUS_MISMATCH = "≠"
+SUBSTRING_MARK = "~"   # appended to the status of a row whose description matched loosely
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+
+
+def module_short(full_or_file):
+    """``tests.test_build_provenance#test_x`` → ``test_build_provenance``."""
+    mod = (full_or_file or "").split("#", 1)[0]
+    return mod[len("tests."):] if mod.startswith("tests.") else mod
 
 
 def _split_row(line):
@@ -669,6 +692,7 @@ def norm_cell(value):
     if value is None:
         return ""
     s = str(value).replace("`", "").strip()
+    s = _MD_LINK.sub(r"\1", s)  # ``[text](url)`` compares as ``text``; the cell keeps the link
     if len(s) >= 2 and s[0] == s[-1] and s[0] in "'\"":
         s = s[1:-1]
     return re.sub(r"\s+", " ", s).strip()
@@ -708,7 +732,7 @@ def join_table(header, rows, records):
         matched += recs
         if not recs:
             joined.append({"status": STATUS_UNPROVEN, "cells": list(row), "record": None,
-                           "kind": kind, "mismatches": []})
+                           "kind": kind, "mismatches": [], "unthreaded": []})
             continue
         rec = _worst(recs)
         cells, mismatches = [desc], []
@@ -727,9 +751,33 @@ def join_table(header, rows, records):
         status = STATUS_ICON.get(rec["status"], rec["status"])
         if mismatches and rec["status"] == "passed":
             status = STATUS_MISMATCH
+        if kind == "substring":
+            status += SUBSTRING_MARK
+        unthreaded = [name for name in header[1:]
+                      if name in rec["params"] and not is_threaded(rec, name)]
         joined.append({"status": status, "cells": cells, "record": rec, "kind": kind,
-                       "mismatches": mismatches})
+                       "mismatches": mismatches, "unthreaded": unthreaded})
     return joined, matched, stats
+
+
+def _annotation_cells(j):
+    """The trailing ``attachments | test | threads`` cells of a joined row (blank on ∅)."""
+    rec = j.get("record")
+    if rec is None:
+        return ["", "", ""]
+    threads = ("unthreaded: " + ", ".join(j["unthreaded"])) if j.get("unthreaded") else ""
+    return [str(len(rec.get("attachments") or [])), module_short(rec.get("test")), threads]
+
+
+def scope_line(run, records):
+    """``_scope: <module> (<n> records for this rule), …_`` over every module the run
+    covered — so a ∅ reads as "no test in this run" when its module is absent, not "no test"."""
+    counts = {}
+    for r in records:
+        counts[module_short(r.get("test"))] = counts.get(module_short(r.get("test")), 0) + 1
+    mods = sorted(set(module_short(f) for f in run.get("files") or []) | set(counts))
+    parts = [f"{m} ({counts.get(m, 0)} records for this rule)" for m in mods]
+    return "_scope: modules in this run — " + (" · ".join(parts) if parts else "none") + "_"
 
 
 def _unspecified_lines(records, max_cell=MAX_CELL):
@@ -766,19 +814,23 @@ def render_joined(tables, records, run, report_url=None):
     per_table, unspecified, stats = join_rule(tables, records)
     lines = []
     for header, joined in per_table:
-        cols = ["status"] + header
+        cols = ["status"] + header + ["attachments", "test", "threads"]
         lines += ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
         for j in joined:
             # spec cells are printed as authored (no cap — the spec already bounds them)
-            lines.append("| " + " | ".join([j["status"]] + [c.replace("\n", " ") for c in j["cells"]]) + " |")
+            lines.append("| " + " | ".join([j["status"]] + [c.replace("\n", " ") for c in j["cells"]]
+                                           + _annotation_cells(j)) + " |")
         lines.append("")
     if unspecified:
-        lines += ["_Not in the spec:_", ""] + _unspecified_lines(unspecified) + [""]
+        lines += ["_Not in the spec:_", "",
+                  "_Only table rows join; a row ruled in the section's prose joins once that prose "
+                  "becomes a table._", ""] + _unspecified_lines(unspecified) + [""]
     proven = stats["rows"] - stats["unproven"]
     lines.append(f"_spec: {stats['rows']} rows · {proven} proven ({stats['exact']} exact, "
-                 f"{stats['substring']} substring) · {stats['unproven']} unproven ∅ · "
-                 f"{stats['mismatch_cells']} cells ≠ · {stats['unspecified']} not in the spec_")
-    lines += ["", _footer(run, report_url)]
+                 f"{stats['substring']} substring{SUBSTRING_MARK}) · {stats['unproven']} unproven "
+                 f"{STATUS_UNPROVEN} · {stats['mismatch_cells']} cells {STATUS_MISMATCH} · "
+                 f"{stats['unspecified']} not in the spec_")
+    lines += ["", scope_line(run, records), "", _footer(run, report_url)]
     return lines
 
 
@@ -796,7 +848,8 @@ def spec_findings(rule, tables, records):
                 out.append(f"- CELL_MISMATCH {rule} {cell(desc)}: {name} spec {cell(spec_cell)} "
                            f"⇢ actual {cell(actual)}")
     for r in unspecified:
-        out.append(f"- ROW_UNSPECIFIED {rule} {r['case']}: evidence row matches no spec row")
+        out.append(f"- ROW_UNSPECIFIED {rule} {r['case']}: evidence row matches no TABLE row "
+                   f"(a ruling in section prose does not join)")
     return out
 
 
