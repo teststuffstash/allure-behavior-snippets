@@ -30,6 +30,16 @@ HYG_PARAM_LEN = 400
 BLANK_NAMES = {"verdict", "events", "attachment", "step"}
 _BLANK_NUMBERED = re.compile(r"^attachment \d+$", re.I)
 
+# thread: top-level step name prefix → phase (case-insensitive); ``→`` in a name → when
+PHASE_PREFIXES = {
+    "given": ("given", "arrange", "seed", "world"),
+    "when": ("when", "act", "ert-", "call", "request"),
+    "then": ("then", "verdict"),
+}
+PHASES = ("given", "when", "then")
+THREAD_MIN_VALUE = 3
+_VERDICT_NAME = re.compile(r"^verdict\s*:", re.I)
+
 _PARAM_ID = re.compile(r"^[^\[]+\[(.*)\]$", re.S)
 _WORLD = re.compile(r"world:\s*([^\]\s(]+)")
 
@@ -125,6 +135,94 @@ def hygiene_of(result, pairs, params, results_dirs=()):
     }
 
 
+# ---------------------------------------------------------------- thread
+
+def phase_of(name):
+    """given / when / then / other for a top-level step name."""
+    n = (name or "").strip().lower()
+    for phase, prefixes in PHASE_PREFIXES.items():
+        if n.startswith(prefixes):
+            return phase
+    if "→" in n:
+        return "when"
+    return "other"
+
+
+def _verdict_keys(source, results_dirs):
+    """Top-level keys of a JSON attachment file under a results dir; [] on any error."""
+    if not source:
+        return []
+    for d in results_dirs or ():
+        p = Path(d) / source
+        try:
+            if p.is_file():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                return [str(k) for k in data] if isinstance(data, dict) else []
+        except (OSError, ValueError):
+            return []
+    return []
+
+
+def _thread_value(value):
+    """The str value a param threads by: one pair of surrounding quotes stripped (allure
+    stores pytest reprs), and only when ≥ THREAD_MIN_VALUE chars."""
+    if value is None:
+        return None
+    v = str(value)
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+        v = v[1:-1]
+    return v if len(v) >= THREAD_MIN_VALUE else None
+
+
+def thread_of(result, params, results_dirs=()):
+    """(phases, thread, thread_broken): each top-level step classified by name; a param
+    threads a phase when its name or str value is a substring of any step name (nested
+    included) or attachment name under that phase's steps, or — for then — of any key
+    of a ``verdict: …`` JSON attachment there."""
+    phases = {p: [] for p in PHASES + ("other",)}
+    texts = {p: [] for p in PHASES}
+    for step in result.get("steps") or []:
+        name = step.get("name") or ""
+        phase = phase_of(name)
+        phases[phase].append(name)
+        if phase == "other":
+            continue
+        nested = []
+        _walk_steps(step, 1, nested)
+        pairs = []
+        _walk_attachments(step, pairs)
+        texts[phase] += [name] + [n for n, _ in nested] + [n for n, _ in pairs]
+        if phase == "then":
+            for n, src in pairs:
+                if _VERDICT_NAME.match(n or ""):
+                    texts[phase] += _verdict_keys(src, results_dirs)
+    thread = {}
+    for k, v in params.items():
+        needles = [n for n in (k, _thread_value(v)) if n]
+        thread[k] = {p: any(nd in t for t in texts[p] for nd in needles) for p in PHASES}
+    broken = [k for k, t in thread.items() if not any(t.values())]
+    return phases, thread, broken
+
+
+def is_threaded(record, param):
+    """True when ``param`` threads given, when and then in this record."""
+    t = (record.get("thread") or {}).get(param) or {}
+    return all(t.get(p) for p in PHASES)
+
+
+def thread_summary(records):
+    """``threads: <n> cases · <k> fully threaded · broken: <param(count), …>`` (top 5)."""
+    full = sum(1 for r in records
+               if r.get("params") and all(is_threaded(r, k) for k in r["params"]))
+    counts = {}
+    for r in records:
+        for k in r.get("thread_broken") or []:
+            counts[k] = counts.get(k, 0) + 1
+    top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    broken = ", ".join(f"{k}({n})" for k, n in top) if top else "none"
+    return f"threads: {len(records)} cases · {full} fully threaded · broken: {broken}"
+
+
 def _unescape(s):
     # pytest escapes non-ASCII in param ids as literal \uXXXX; undo that
     return re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), s)
@@ -157,7 +255,8 @@ def world_of(result, labels, case, attachments):
 
 def record_of(result, results_dirs=()):
     """(rule, record) for a labelled result, or None when it carries no story.
-    ``results_dirs`` only feeds ``hygiene.attachment_bytes`` (file sizes)."""
+    ``results_dirs`` feeds ``hygiene.attachment_bytes`` (file sizes) and the then-phase
+    verdict keys of ``thread``."""
     labels = _labels(result)
     rule = labels.get("story")
     if not rule:
@@ -177,6 +276,7 @@ def record_of(result, results_dirs=()):
     if msg:
         first = msg.strip().splitlines()
         failure = first[0].strip() if first else None
+    phases, thread, thread_broken = thread_of(result, params, results_dirs)
     record = {
         "case": case,
         "world": world_of(result, labels, case, attachments),
@@ -189,6 +289,9 @@ def record_of(result, results_dirs=()):
         "test": full,
         "file": full.split("#", 1)[0],
         "hygiene": hygiene_of(result, pairs, params, results_dirs),
+        "phases": phases,
+        "thread": thread,
+        "thread_broken": thread_broken,
     }
     return rule, record
 
@@ -240,6 +343,12 @@ def param_columns(records):
     return [k for k in names if not all(_empty(r["params"].get(k)) for r in records)]
 
 
+def _param_cell(record, name, max_cell):
+    """A param cell; bold when the param threads given, when and then (colour for humans)."""
+    c = cell(record["params"].get(name), max_cell)
+    return f"**{c}**" if c and is_threaded(record, name) else c
+
+
 def _attachments_cell(names):
     if len(names) <= 3:
         return ", ".join(names)
@@ -269,7 +378,7 @@ def table_lines(records, max_rows=MAX_ROWS, max_cell=MAX_CELL):
         row = [STATUS_ICON.get(r["status"], r["status"]), cell(r["case"], max_cell)]
         if has_world:
             row.append(cell(r.get("world"), max_cell))
-        row += [cell(r["params"].get(k), max_cell) for k in param_names]
+        row += [_param_cell(r, k, max_cell) for k in param_names]
         row.append(cell(_attachments_cell(r["attachments"]), max_cell))
         if has_failure:
             row.append(cell(r.get("failure"), max_cell))
@@ -297,11 +406,13 @@ def render_digest_tables(records, run, report_url=None):
     lines = []
     if len(files) <= 1:
         lines += table_lines(records, None, DIGEST_MAX_CELL)
+        lines += ["", thread_summary(records)]
     else:
         for f in files:
+            recs = [r for r in records if r.get("file") == f]
             lines += [f"### {f}", ""]
-            lines += table_lines([r for r in records if r.get("file") == f], None, DIGEST_MAX_CELL)
-            lines.append("")
+            lines += table_lines(recs, None, DIGEST_MAX_CELL)
+            lines += ["", thread_summary(recs), ""]
     return lines + ["", _footer(run, report_url)]
 
 
@@ -437,6 +548,10 @@ def hygiene_lines(rule, evidence):
         if h.get("blank_names"):
             names = ", ".join(f"`{cell(n, 40)}`" for n in h["blank_names"])
             line("NAME_BLANK", r["case"], f"blank_names={names} (threshold 0)")
+    for r, h in hyg:
+        if r.get("thread_broken"):
+            line("THREAD_BROKEN", r["case"],
+                 f"{', '.join(r['thread_broken'])} in no given/when/then step")
     return [totals, ""] + (out or ["- none"])
 
 

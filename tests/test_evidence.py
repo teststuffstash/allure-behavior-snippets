@@ -6,6 +6,7 @@ from allure_behavior_snippets import evidence
 
 RULE = "ING-RT-BUILD-CORPUS"
 HYG = "ING-RT-HYGIENE"
+THR = "ING-RT-THREAD"
 
 
 def _result(name, full, status, story=RULE, params=None, attachments=None, steps=None,
@@ -65,21 +66,39 @@ def results_dir(tmp_path):
         _result("test_h[blank]", "tests.test_hyg#test_h", "passed", story=HYG, params={"n": 1},
                 attachments=["Attachment 3"],
                 steps=[{"name": "open", "steps": [{"name": "verdict"}]}]),
+        # thread: (a) ``sha`` threads all three phases (name in given, value in when,
+        # key in the verdict JSON file); ``rc`` by name only (value "0" too short)
+        _result("test_t[threaded]", "tests.test_thr#test_t", "passed", story=THR,
+                params={"sha": "'cafef00d'", "rc": 0},
+                steps=[{"name": "Given: a world with one sha and rc", "status": "passed"},
+                       {"name": "ert-build rc=0 → corpus/cafef00d/corpus.sqlite",
+                        "attachments": [{"name": "ert-build events", "source": "ev.txt"}]},
+                       {"name": "verdict: corpus_meta carries the row",
+                        "attachments": [{"name": "verdict: corpus_meta carries the row",
+                                         "source": "verdict-threaded.json"}]}]),
+        # (b) ``door`` appears nowhere → THREAD_BROKEN
+        _result("test_t[nowhere]", "tests.test_thr#test_t", "passed", story=THR,
+                params={"door": "'Dockerfile'"},
+                steps=[{"name": "open"}, {"name": "Then: fragments present"}]),
+        # (c) no steps and no params → nothing to thread, never THREAD_BROKEN
+        _result("test_t[empty]", "tests.test_thr#test_t", "passed", story=THR, params={}),
     ]
     for i, r in enumerate(rows):
         (d / f"{i}-result.json").write_text(json.dumps(r), encoding="utf-8")
     (d / "environment.properties").write_text("corpus=c68134b\nrunner=ci\n", encoding="utf-8")
     (d / "sizes.txt").write_bytes(b"s" * 1234)   # the clean record's attachment file
+    (d / "verdict-threaded.json").write_text(
+        json.dumps({"rc": {"expected": 0, "actual": 0}, "sha": {"expected": "cafef00d"}}), encoding="utf-8")
     return d
 
 
 def test_records_extracted(results_dir):
     ev = evidence.build_evidence(evidence.load_results([results_dir]),
                                  evidence.load_environment([results_dir]), generated="2026-09-28")
-    assert set(ev["rules"]) == {RULE, HYG}, "unlabelled row must be skipped"
+    assert set(ev["rules"]) == {RULE, HYG, THR}, "unlabelled row must be skipped"
     assert ev["run"] == {"corpus": "c68134b", "runner": "ci", "generated": "2026-09-28",
                          "files": ["tests.test_build", "tests.test_delta", "tests.test_hyg",
-                                   "tests.test_misc"],
+                                   "tests.test_misc", "tests.test_thr"],
                          "unlabelled": ["tests.test_build#test_lost_label",
                                         "tests.test_misc#test_unlabelled"]}
     recs = ev["rules"][RULE]
@@ -237,11 +256,14 @@ def test_hygiene_metrics_and_block(results_dir, tmp_path):
         f"- ATTACH_BULK {HYG} bulk: attachments_total=9 (threshold 8)",
         f"- PARAM_BLOB {HYG} blob: param_max_len=500 (threshold 400)",
         f"- NAME_BLANK {HYG} blank: blank_names=`Attachment 3`, `verdict` (threshold 0)",
-    ]
-    assert not any("clean" in l for l in block)
+    ] + [f"- THREAD_BROKEN {HYG} {c}: {p} in no given/when/then step"
+         for c, p in [("blank", "n"), ("blob", "payload"), ("bulk", "n"), ("clean", "n"),
+                      ("flat", "n"), ("noisy", "n")]]
+    assert not any("clean" in l for l in block[:-6])
     # bytes threshold fires on its own; a bare record (no params/attachments) is never STEP_FLAT
-    big = dict(by_case["clean"], case="big", hygiene=dict(by_case["clean"]["hygiene"], attachment_bytes=262145))
-    bare = dict(by_case["flat"], case="bare0", params={}, attachments=[])
+    big = dict(by_case["clean"], case="big", thread_broken=[],
+               hygiene=dict(by_case["clean"]["hygiene"], attachment_bytes=262145))
+    bare = dict(by_case["flat"], case="bare0", params={}, attachments=[], thread_broken=[])
     ev2 = {"run": {}, "rules": {"X": [big, bare]}}
     assert evidence.hygiene_lines("X", ev2)[2:] == ["- ATTACH_BULK X big: attachment_bytes=262145 (threshold 262144)"]
     # digest: block sits after Findings, hygiene lines never appear among findings
@@ -256,3 +278,54 @@ def test_hygiene_metrics_and_block(results_dir, tmp_path):
 def test_is_blank_name():
     assert all(evidence.is_blank_name(n) for n in ["verdict", "Events", "ATTACHMENT", "step", "attachment 12"])
     assert not any(evidence.is_blank_name(n) for n in ["verdict: ok", "attachment x", "open", "steps"])
+
+
+def test_thread_phases_bolding_and_summary(results_dir, tmp_path):
+    ev = evidence.build_evidence(evidence.load_results([results_dir]), generated="2026-09-28",
+                                 results_dirs=[results_dir])
+    by_case = {r["case"]: r for r in ev["rules"][THR]}
+    good, none, empty = by_case["threaded"], by_case["nowhere"], by_case["empty"]
+    assert good["phases"] == {"given": ["Given: a world with one sha and rc"],
+                              "when": ["ert-build rc=0 → corpus/cafef00d/corpus.sqlite"],
+                              "then": ["verdict: corpus_meta carries the row"], "other": []}
+    assert good["thread"] == {"sha": {"given": True, "when": True, "then": True},
+                              "rc": {"given": True, "when": True, "then": True}}
+    assert good["thread_broken"] == []
+    assert none["phases"] == {"given": [], "when": [], "then": ["Then: fragments present"], "other": ["open"]}
+    assert none["thread"] == {"door": {"given": False, "when": False, "then": False}}
+    assert none["thread_broken"] == ["door"]
+    assert empty["phases"] == {"given": [], "when": [], "then": [], "other": []}
+    assert empty["thread"] == {} and empty["thread_broken"] == []
+    # hygiene: THREAD_BROKEN only for (b), placed after NAME_BLANK
+    block = evidence.hygiene_lines(THR, ev)
+    assert block[2:] == [f"- THREAD_BROKEN {THR} nowhere: door in no given/when/then step"]
+    # colouring: the fully threaded cell is bold in the fragment and the digest, others plain
+    out = tmp_path / "out"
+    evidence.write_outputs(ev, out, rules=[THR])
+    frag = (out / f"{THR}.md").read_text(encoding="utf-8").splitlines()
+    assert frag[0] == "| status | case | door | sha | rc | attachments |"
+    assert "| **'cafef00d'** | **0** |" in "\n".join(frag)
+    assert "| 'Dockerfile' |" in "\n".join(frag)
+    digest = (out / "digest.md").read_text(encoding="utf-8")
+    assert "| **'cafef00d'** | **0** |" in digest and "**'Dockerfile'**" not in digest
+    assert "|\n\nthreads: 3 cases · 1 fully threaded · broken: door(1)\n" in digest
+    assert digest.index("threads: 3 cases") < digest.index("_run:")
+    # multi-module digest: one summary per table; none broken → "none"
+    two = [dict(good, file="a"), dict(good, file="b", case="t2")]
+    lines = evidence.render_digest_tables(two, {"generated": "d"})
+    assert lines.count("threads: 1 cases · 1 fully threaded · broken: none") == 2
+    assert evidence.thread_summary([none] * 7 + [empty]) == "threads: 8 cases · 0 fully threaded · broken: door(7)"
+
+
+def test_phase_of_and_thread_value():
+    assert [evidence.phase_of(n) for n in
+            ["Given: x", "ARRANGE", "seed world", "world: rks", "When x", "act", "ert-delta rc=0",
+             "call search", "request /mcp", "a → b", "then: a → b", "Verdict: ok", "open", ""]] == [
+        "given", "given", "given", "given", "when", "when", "when", "when", "when", "when",
+        "then", "then", "other", "other"]
+    assert evidence._thread_value("'C'") is None and evidence._thread_value("'null'") == "null"
+    assert evidence._thread_value(0) is None and evidence._thread_value("abc") == "abc"
+    assert evidence._thread_value(None) is None
+    # top-5 cap and count-then-name ordering
+    recs = [{"thread_broken": list("abcdef")}] + [{"thread_broken": ["f"]}] * 2
+    assert evidence.thread_summary(recs).endswith("broken: f(3), a(1), b(1), c(1), d(1)")
