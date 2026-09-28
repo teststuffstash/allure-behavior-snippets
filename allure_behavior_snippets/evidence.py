@@ -17,8 +17,10 @@ from pathlib import Path
 
 STATUS_ICON = {"passed": "✓", "failed": "❌", "broken": "❌", "skipped": "⚠"}
 STATUS_RANK = {"failed": 3, "broken": 3, "unknown": 2, "skipped": 1, "passed": 0}
-MAX_ROWS = 12
+MAX_ROWS = 12          # per-rule <RULE>.md fragments
 MAX_CELL = 80
+DIGEST_MAX_CELL = 400  # digest.md shows every row, wider cells
+RUN_META = ("generated", "files", "unlabelled")
 
 _PARAM_ID = re.compile(r"^[^\[]+\[(.*)\]$", re.S)
 _WORLD = re.compile(r"world:\s*([^\]\s(]+)")
@@ -62,8 +64,9 @@ def _labels(result):
 
 
 def _walk_attachments(node, acc):
+    """Append (name, source) pairs for every attachment, steps included."""
     for a in node.get("attachments") or []:
-        acc.append(a.get("name") or a.get("source") or "")
+        acc.append((a.get("name") or a.get("source") or "", a.get("source") or ""))
     for s in node.get("steps") or []:
         _walk_attachments(s, acc)
 
@@ -78,6 +81,14 @@ def case_of(name):
     if m:
         return _unescape(m.group(1))
     return re.sub(r"^test_", "", name or "")
+
+
+def case_of_full(full):
+    """Case for an allure ``fullName`` (``pkg.mod#Class.test_x`` — no param id)."""
+    tail = (full or "").split("#", 1)[-1]
+    if "[" not in tail:
+        tail = tail.rsplit(".", 1)[-1]
+    return case_of(tail)
 
 
 def world_of(result, labels, case, attachments):
@@ -99,8 +110,9 @@ def record_of(result):
     name = result.get("name") or ""
     full = result.get("fullName") or name
     case = case_of(name)
-    attachments = []
-    _walk_attachments(result, attachments)
+    pairs = []
+    _walk_attachments(result, pairs)
+    attachments = [n for n, _ in pairs]
     params = {}
     for p in result.get("parameters") or []:
         if p.get("name") is not None:
@@ -116,6 +128,7 @@ def record_of(result):
         "status": result.get("status") or "unknown",
         "params": params,
         "attachments": attachments,
+        "attachment_files": {n: src for n, src in pairs},
         "steps": [s.get("name") or "" for s in result.get("steps") or []],
         "failure": failure,
         "test": full,
@@ -126,9 +139,14 @@ def record_of(result):
 
 def build_evidence(results, env=None, generated=None):
     rules = {}
+    files = set()
+    unlabelled = set()
     for r in results:
+        full = r.get("fullName") or r.get("name") or ""
+        files.add(full.split("#", 1)[0])
         got = record_of(r)
         if got is None:
+            unlabelled.add(full)
             continue
         rule, rec = got
         rules.setdefault(rule, []).append(rec)
@@ -136,18 +154,34 @@ def build_evidence(results, env=None, generated=None):
         recs.sort(key=lambda r: (r["case"], r["test"]))
     run = dict(env or {})
     run["generated"] = generated or date.today().isoformat()
+    run["files"] = sorted(files)            # modules the run covered (labelled or not)
+    run["unlabelled"] = sorted(unlabelled)  # fullNames that ran without a story label
     return {"run": run, "rules": {k: rules[k] for k in sorted(rules)}}
 
 
 # ---------------------------------------------------------------- markdown
 
-def cell(value):
+def cell(value, max_cell=MAX_CELL):
     if value is None:
         return ""
     s = str(value).replace("\r", " ").replace("\n", " ").replace("|", "\\|")
-    if len(s) > MAX_CELL:
-        s = s[:MAX_CELL - 1] + "…"
+    if len(s) > max_cell:
+        s = s[:max_cell - 1] + "…"
     return s
+
+
+def _empty(value):
+    return value is None or value == ""
+
+
+def param_columns(records):
+    """Param names in first-seen order, minus columns whose every value is empty."""
+    names = []
+    for r in records:
+        for k in r["params"]:
+            if k not in names:
+                names.append(k)
+    return [k for k in names if not all(_empty(r["params"].get(k)) for r in records)]
 
 
 def _attachments_cell(names):
@@ -156,47 +190,63 @@ def _attachments_cell(names):
     return str(len(names))
 
 
-def _footer(run):
-    parts = [f"{k}={v}" for k, v in run.items() if k != "generated"]
+def _footer(run, report_url=None):
+    parts = [f"{k}={v}" for k, v in run.items() if k not in RUN_META]
     parts.append(str(run.get("generated", "")))
-    return f"_run: {' · '.join(parts)}_"
+    footer = f"_run: {' · '.join(parts)}_"
+    if report_url:
+        footer = footer[:-1] + f" · report: {report_url}_"
+    return footer
 
 
-def render_table(records, run, report_url=None):
-    """GFM table lines for one rule's records (+ overflow line + run footer)."""
+def table_lines(records, max_rows=MAX_ROWS, max_cell=MAX_CELL):
+    """GFM table lines for some records (+ overflow line when ``max_rows`` elides)."""
     has_world = any(r.get("world") for r in records)
     has_failure = any(r["status"] not in ("passed", "skipped") for r in records)
-    param_names = []
-    for r in records:
-        for k in r["params"]:
-            if k not in param_names:
-                param_names.append(k)
+    param_names = param_columns(records)
     cols = ["status", "case"] + (["world"] if has_world else []) + param_names + ["attachments"]
     if has_failure:
         cols.append("failure")
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
-    shown = records[:MAX_ROWS]
+    shown = records if max_rows is None else records[:max_rows]
     for r in shown:
-        row = [STATUS_ICON.get(r["status"], r["status"]), cell(r["case"])]
+        row = [STATUS_ICON.get(r["status"], r["status"]), cell(r["case"], max_cell)]
         if has_world:
-            row.append(cell(r.get("world")))
-        row += [cell(r["params"].get(k)) for k in param_names]
-        row.append(cell(_attachments_cell(r["attachments"])))
+            row.append(cell(r.get("world"), max_cell))
+        row += [cell(r["params"].get(k), max_cell) for k in param_names]
+        row.append(cell(_attachments_cell(r["attachments"]), max_cell))
         if has_failure:
-            row.append(cell(r.get("failure")))
+            row.append(cell(r.get("failure"), max_cell))
         lines.append("| " + " | ".join(row) + " |")
-    rest = records[MAX_ROWS:]
+    rest = records[len(shown):]
     if rest:
         passed = sum(1 for r in rest if r["status"] == "passed")
         failed = sum(1 for r in rest if r["status"] not in ("passed", "skipped"))
         lines.append("")
         lines.append(f"_… {len(rest)} more rows ({passed} passed, {failed} failed)_")
-    lines.append("")
-    footer = _footer(run)
-    if report_url:
-        footer = footer[:-1] + f" · report: {report_url}_"
-    lines.append(footer)
     return lines
+
+
+def render_table(records, run, report_url=None, max_rows=MAX_ROWS, max_cell=MAX_CELL):
+    """GFM table lines for one rule's records (+ overflow line + run footer)."""
+    return table_lines(records, max_rows, max_cell) + ["", _footer(run, report_url)]
+
+
+def render_digest_tables(records, run, report_url=None):
+    """Digest view of one rule: every row, wide cells, one table per test module."""
+    files = []
+    for r in records:
+        if r.get("file") not in files:
+            files.append(r.get("file"))
+    lines = []
+    if len(files) <= 1:
+        lines += table_lines(records, None, DIGEST_MAX_CELL)
+    else:
+        for f in files:
+            lines += [f"### {f}", ""]
+            lines += table_lines([r for r in records if r.get("file") == f], None, DIGEST_MAX_CELL)
+            lines.append("")
+    return lines + ["", _footer(run, report_url)]
 
 
 # ---------------------------------------------------------------- digest
@@ -220,21 +270,66 @@ def delta(rule, evidence, baseline):
     return added, removed, flips
 
 
+REMOVED_CLASSES = (
+    ("out-of-scope", "out-of-scope (file not run)"),
+    ("unlabelled", "unlabelled (ran, no rule)"),
+    ("gone", "gone (not in run)"),
+)
+
+
+def classify_removed(rule, evidence, baseline, removed):
+    """Split removed cases: baseline file not in run.files → out-of-scope; a result with
+    that test name (or case) ran at HEAD without a story → unlabelled; else gone."""
+    run = evidence.get("run", {})
+    files = run.get("files")
+    unlabelled = run.get("unlabelled") or []
+    unlabelled_cases = {case_of_full(u) for u in unlabelled}
+    old = {}
+    for r in (baseline or {}).get("rules", {}).get(rule, []):
+        old.setdefault(r.get("case"), []).append(r)
+    out = {key: [] for key, _ in REMOVED_CLASSES}
+    for c in removed:
+        recs = old.get(c, [])
+        if files is not None and recs and all(r.get("file") and r["file"] not in files for r in recs):
+            out["out-of-scope"].append(c)
+        elif c in unlabelled_cases or any(r.get("test") in unlabelled for r in recs):
+            out["unlabelled"].append(c)
+        else:
+            out["gone"].append(c)
+    return out
+
+
+def _bare(record):
+    return not record.get("params") and not record.get("attachments")
+
+
 def findings(rule, evidence, baseline=None):
-    out = []
     recs = evidence["rules"].get(rule, [])
+    out = []
     if not recs:
         out.append(f"- NO_EVIDENCE {rule} —: rule listed but no labelled test result carries it")
+    old_bare = set()
+    if baseline is not None:
+        for r in baseline.get("rules", {}).get(rule, []):
+            if "params" in r and "attachments" in r and _bare(r):
+                old_bare.add(r.get("case"))
+    bare_new, bare_old, failed = [], [], []
     for r in recs:
-        if not r["params"] and not r["attachments"]:
-            out.append(f"- BARE_ROW {rule} {r['case']}: no parameters and no attachments — "
-                       f"the row proves only that `{r['test']}` ran")
+        if _bare(r):
+            tag = "BARE_ROW (pre-existing)" if r["case"] in old_bare else "BARE_ROW"
+            line = (f"- {tag} {rule} {r['case']}: no parameters and no attachments — "
+                    f"the row proves only that `{r['test']}` ran")
+            (bare_old if r["case"] in old_bare else bare_new).append(line)
         if r["status"] not in ("passed", "skipped"):
             why = r.get("failure") or "no failure message"
-            out.append(f"- FAILED {rule} {r['case']}: status={r['status']} — {cell(why)}")
+            failed.append(f"- FAILED {rule} {r['case']}: status={r['status']} — {cell(why)}")
+    out += bare_new + bare_old + failed
     if baseline is not None:
         _, removed, _ = delta(rule, evidence, baseline)
-        for c in removed:
+        classes = classify_removed(rule, evidence, baseline, removed)
+        for c in classes["unlabelled"]:
+            out.append(f"- UNLABELLED {rule} {c}: ran at HEAD without a rule label")
+        for c in classes["gone"]:
             out.append(f"- VANISHED {rule} {c}: present in baseline, absent in this run")
     return out
 
@@ -246,7 +341,7 @@ def render_digest(rules, evidence, baseline=None, report_url=None):
         lines.append("")
         recs = evidence["rules"].get(rule, [])
         if recs:
-            lines += render_table(recs, evidence["run"], report_url)
+            lines += render_digest_tables(recs, evidence["run"], report_url)
         else:
             lines.append("_no evidence rows for this rule_")
         lines.append("")
@@ -256,6 +351,10 @@ def render_digest(rules, evidence, baseline=None, report_url=None):
             lines.append("")
             lines.append(f"- added: {', '.join(added) if added else 'none'}")
             lines.append(f"- removed: {', '.join(removed) if removed else 'none'}")
+            if removed:
+                classes = classify_removed(rule, evidence, baseline, removed)
+                for key, label in REMOVED_CLASSES:
+                    lines.append(f"  - {label}: {', '.join(classes[key]) if classes[key] else 'none'}")
             if flips:
                 lines.append("- flips:")
                 lines += [f"  - {c}: {o} → {n}" for c, o, n in flips]
