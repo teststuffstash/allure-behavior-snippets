@@ -22,6 +22,14 @@ MAX_CELL = 80
 DIGEST_MAX_CELL = 400  # digest.md shows every row, wider cells
 RUN_META = ("generated", "files", "unlabelled")
 
+# REPORT-HYGIENE thresholds (digest ``**Hygiene:**`` block; never findings)
+HYG_STEPS_TOP = 8
+HYG_ATTACH_BYTES = 262144
+HYG_ATTACH_TOTAL = 8
+HYG_PARAM_LEN = 400
+BLANK_NAMES = {"verdict", "events", "attachment", "step"}
+_BLANK_NUMBERED = re.compile(r"^attachment \d+$", re.I)
+
 _PARAM_ID = re.compile(r"^[^\[]+\[(.*)\]$", re.S)
 _WORLD = re.compile(r"world:\s*([^\]\s(]+)")
 
@@ -71,6 +79,52 @@ def _walk_attachments(node, acc):
         _walk_attachments(s, acc)
 
 
+def _walk_steps(node, depth, acc):
+    """Accumulate (name, depth) for every step, nested included."""
+    for s in node.get("steps") or []:
+        acc.append((s.get("name") or "", depth))
+        _walk_steps(s, depth + 1, acc)
+
+
+def _attachment_size(source, results_dirs):
+    """Size of the attachment file under the first results dir holding it; 0 when missing."""
+    if not source:
+        return 0
+    for d in results_dirs or ():
+        p = Path(d) / source
+        try:
+            if p.is_file():
+                return p.stat().st_size
+        except OSError:
+            continue
+    return 0
+
+
+def is_blank_name(name):
+    """A step/attachment name that says nothing: ``verdict``, ``events``, ``attachment``,
+    ``step`` or ``attachment N`` (case-insensitive)."""
+    n = (name or "").strip()
+    return n.lower() in BLANK_NAMES or bool(_BLANK_NUMBERED.match(n))
+
+
+def hygiene_of(result, pairs, params, results_dirs=()):
+    """Mechanical REPORT-HYGIENE metrics for one raw result."""
+    steps = []
+    _walk_steps(result, 1, steps)
+    return {
+        "steps_top": len(result.get("steps") or []),
+        "steps_total": len(steps),
+        "steps_depth": max((d for _, d in steps), default=0),
+        "attachments_total": len(pairs),
+        "attachment_bytes": sum(_attachment_size(src, results_dirs) for _, src in pairs),
+        "param_max_len": max((len(str(v)) for v in params.values()), default=0),
+        "verdict_step": any(n.strip().lower().startswith("verdict") for n, _ in steps),
+        # every step (nested too) or attachment whose name says nothing
+        "blank_names": sorted({n for n in [n for n, _ in steps] + [n for n, _ in pairs]
+                               if is_blank_name(n)}),
+    }
+
+
 def _unescape(s):
     # pytest escapes non-ASCII in param ids as literal \uXXXX; undo that
     return re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), s)
@@ -101,8 +155,9 @@ def world_of(result, labels, case, attachments):
     return None
 
 
-def record_of(result):
-    """(rule, record) for a labelled result, or None when it carries no story."""
+def record_of(result, results_dirs=()):
+    """(rule, record) for a labelled result, or None when it carries no story.
+    ``results_dirs`` only feeds ``hygiene.attachment_bytes`` (file sizes)."""
     labels = _labels(result)
     rule = labels.get("story")
     if not rule:
@@ -133,18 +188,19 @@ def record_of(result):
         "failure": failure,
         "test": full,
         "file": full.split("#", 1)[0],
+        "hygiene": hygiene_of(result, pairs, params, results_dirs),
     }
     return rule, record
 
 
-def build_evidence(results, env=None, generated=None):
+def build_evidence(results, env=None, generated=None, results_dirs=()):
     rules = {}
     files = set()
     unlabelled = set()
     for r in results:
         full = r.get("fullName") or r.get("name") or ""
         files.add(full.split("#", 1)[0])
-        got = record_of(r)
+        got = record_of(r, results_dirs)
         if got is None:
             unlabelled.add(full)
             continue
@@ -348,6 +404,42 @@ def findings(rule, evidence, baseline=None):
     return out
 
 
+def hygiene_lines(rule, evidence):
+    """``**Hygiene:**`` body: per-rule totals, then one line per case crossing a
+    threshold (codes in fixed order). Records without ``hygiene`` (older evidence,
+    hand-built rows) count in the totals only."""
+    recs = evidence["rules"].get(rule, [])
+    hyg = [(r, r["hygiene"]) for r in recs if r.get("hygiene")]
+    totals = (f"cases {len(recs)} · attachments {sum(h['attachments_total'] for _, h in hyg)} · "
+              f"bytes {sum(h['attachment_bytes'] for _, h in hyg)} · "
+              f"max depth {max((h['steps_depth'] for _, h in hyg), default=0)}")
+    out = []
+    def line(code, case, metric):
+        out.append(f"- {code} {rule} {case}: {metric}")
+    for r, h in hyg:
+        if h["steps_total"] == 0 and (r.get("attachments") or r.get("params")):
+            line("STEP_FLAT", r["case"], "steps_total=0 (threshold > 0)")
+    for r, h in hyg:
+        if h["steps_top"] > HYG_STEPS_TOP:
+            line("STEP_NOISE", r["case"], f"steps_top={h['steps_top']} (threshold {HYG_STEPS_TOP})")
+    for r, h in hyg:
+        over = []
+        if h["attachment_bytes"] > HYG_ATTACH_BYTES:
+            over.append(f"attachment_bytes={h['attachment_bytes']} (threshold {HYG_ATTACH_BYTES})")
+        if h["attachments_total"] > HYG_ATTACH_TOTAL:
+            over.append(f"attachments_total={h['attachments_total']} (threshold {HYG_ATTACH_TOTAL})")
+        if over:
+            line("ATTACH_BULK", r["case"], ", ".join(over))
+    for r, h in hyg:
+        if h["param_max_len"] > HYG_PARAM_LEN:
+            line("PARAM_BLOB", r["case"], f"param_max_len={h['param_max_len']} (threshold {HYG_PARAM_LEN})")
+    for r, h in hyg:
+        if h.get("blank_names"):
+            names = ", ".join(f"`{cell(n, 40)}`" for n in h["blank_names"])
+            line("NAME_BLANK", r["case"], f"blank_names={names} (threshold 0)")
+    return [totals, ""] + (out or ["- none"])
+
+
 def render_digest(rules, evidence, baseline=None, report_url=None):
     lines = []
     for rule in rules:
@@ -386,6 +478,10 @@ def render_digest(rules, evidence, baseline=None, report_url=None):
         lines.append("")
         lines += findings(rule, evidence, baseline) or ["- none"]
         lines.append("")
+        lines.append("**Hygiene:**")
+        lines.append("")
+        lines += hygiene_lines(rule, evidence)
+        lines.append("")
     return lines
 
 
@@ -419,7 +515,7 @@ def cli(argv=None):
     ap.add_argument("--report-url", default=None, help="Allure report URL (footer only)")
     args = ap.parse_args(argv)
     env = load_environment(args.results)
-    evidence = build_evidence(load_results(args.results), env)
+    evidence = build_evidence(load_results(args.results), env, results_dirs=args.results)
     baseline = None
     if args.baseline:
         baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))

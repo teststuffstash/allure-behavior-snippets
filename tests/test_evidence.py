@@ -5,6 +5,7 @@ import pytest
 from allure_behavior_snippets import evidence
 
 RULE = "ING-RT-BUILD-CORPUS"
+HYG = "ING-RT-HYGIENE"
 
 
 def _result(name, full, status, story=RULE, params=None, attachments=None, steps=None,
@@ -50,19 +51,35 @@ def results_dir(tmp_path):
         # same rule from a second module; ``unused`` is empty everywhere → column dropped
         _result("test_delta[zeta]", "tests.test_delta#test_delta", "passed",
                 params={"desc": "z" * 100, "unused": ""}),
+        # REPORT-HYGIENE: one record per code + one clean record (own rule, own module)
+        _result("test_h[clean]", "tests.test_hyg#test_h", "passed", story=HYG,
+                params={"n": 1}, attachments=["sizes"],
+                steps=[{"name": "open", "steps": [{"name": "Verdict: ok"}]}]),
+        _result("test_h[flat]", "tests.test_hyg#test_h", "passed", story=HYG, params={"n": 1}),
+        _result("test_h[noisy]", "tests.test_hyg#test_h", "passed", story=HYG, params={"n": 9},
+                steps=[{"name": f"s{i}"} for i in range(9)]),
+        _result("test_h[bulk]", "tests.test_hyg#test_h", "passed", story=HYG, params={"n": 9},
+                attachments=[f"a{i}" for i in range(9)], steps=[{"name": "open"}]),
+        _result("test_h[blob]", "tests.test_hyg#test_h", "passed", story=HYG,
+                params={"payload": "b" * 500}, steps=[{"name": "open"}]),
+        _result("test_h[blank]", "tests.test_hyg#test_h", "passed", story=HYG, params={"n": 1},
+                attachments=["Attachment 3"],
+                steps=[{"name": "open", "steps": [{"name": "verdict"}]}]),
     ]
     for i, r in enumerate(rows):
         (d / f"{i}-result.json").write_text(json.dumps(r), encoding="utf-8")
     (d / "environment.properties").write_text("corpus=c68134b\nrunner=ci\n", encoding="utf-8")
+    (d / "sizes.txt").write_bytes(b"s" * 1234)   # the clean record's attachment file
     return d
 
 
 def test_records_extracted(results_dir):
     ev = evidence.build_evidence(evidence.load_results([results_dir]),
                                  evidence.load_environment([results_dir]), generated="2026-09-28")
-    assert set(ev["rules"]) == {RULE}, "unlabelled row must be skipped"
+    assert set(ev["rules"]) == {RULE, HYG}, "unlabelled row must be skipped"
     assert ev["run"] == {"corpus": "c68134b", "runner": "ci", "generated": "2026-09-28",
-                         "files": ["tests.test_build", "tests.test_delta", "tests.test_misc"],
+                         "files": ["tests.test_build", "tests.test_delta", "tests.test_hyg",
+                                   "tests.test_misc"],
                          "unlabelled": ["tests.test_build#test_lost_label",
                                         "tests.test_misc#test_unlabelled"]}
     recs = ev["rules"][RULE]
@@ -127,7 +144,7 @@ def test_digest_predicates_and_delta(results_dir, tmp_path):
             "  - unlabelled (ran, no rule): lost_label\n"
             "  - gone (not in run): gone\n") in text
     assert "  - pipe|case: passed → failed" in text
-    assert "- none" not in text
+    assert "**Findings:**\n\n- none" not in text
     # a case that moved rule (spec split): classified, never VANISHED, no finding
     split = evidence.render_digest(["ING-RT-SPLIT-FROM"], ev, baseline)
     assert "  - relabelled (now under ING-RT-BUILD-CORPUS): bare" in split
@@ -175,7 +192,7 @@ def test_no_findings_is_none(tmp_path):
         {"case": "a", "world": None, "status": "passed", "params": {"p": 1}, "attachments": [],
          "steps": [], "failure": None, "test": "t#a", "file": "t"}]}}
     lines = evidence.render_digest(["R"], ev)
-    assert lines[-2] == "- none"
+    assert lines[-8:] == ["- none", "", "**Hygiene:**", "", "cases 1 · attachments 0 · bytes 0 · max depth 0", "", "- none", ""]
 
 
 def test_param_columns_drop_all_empty():
@@ -196,3 +213,46 @@ def test_overflow_line():
     lines = evidence.render_table(recs, {"generated": "d"})
     assert lines[-3] == "_… 3 more rows (1 passed, 2 failed)_"
     assert sum(1 for l in lines if l.startswith("| ")) == 13  # header + 12 rows
+
+
+def test_hygiene_metrics_and_block(results_dir, tmp_path):
+    ev = evidence.build_evidence(evidence.load_results([results_dir]), generated="2026-09-28",
+                                 results_dirs=[results_dir])
+    by_case = {r["case"]: r for r in ev["rules"][HYG]}
+    assert by_case["clean"]["hygiene"] == {
+        "steps_top": 1, "steps_total": 2, "steps_depth": 2, "attachments_total": 1,
+        "attachment_bytes": 1234, "param_max_len": 1, "verdict_step": True, "blank_names": []}
+    assert by_case["bulk"]["hygiene"]["attachment_bytes"] == 0, "missing files count 0"
+    assert by_case["blank"]["hygiene"] == {
+        "steps_top": 1, "steps_total": 2, "steps_depth": 2, "attachments_total": 1,
+        "attachment_bytes": 0, "param_max_len": 1, "verdict_step": True,
+        "blank_names": ["Attachment 3", "verdict"]}
+    assert by_case["flat"]["hygiene"]["steps_total"] == 0
+    block = evidence.hygiene_lines(HYG, ev)
+    assert block == [
+        "cases 6 · attachments 11 · bytes 1234 · max depth 2",
+        "",
+        f"- STEP_FLAT {HYG} flat: steps_total=0 (threshold > 0)",
+        f"- STEP_NOISE {HYG} noisy: steps_top=9 (threshold 8)",
+        f"- ATTACH_BULK {HYG} bulk: attachments_total=9 (threshold 8)",
+        f"- PARAM_BLOB {HYG} blob: param_max_len=500 (threshold 400)",
+        f"- NAME_BLANK {HYG} blank: blank_names=`Attachment 3`, `verdict` (threshold 0)",
+    ]
+    assert not any("clean" in l for l in block)
+    # bytes threshold fires on its own; a bare record (no params/attachments) is never STEP_FLAT
+    big = dict(by_case["clean"], case="big", hygiene=dict(by_case["clean"]["hygiene"], attachment_bytes=262145))
+    bare = dict(by_case["flat"], case="bare0", params={}, attachments=[])
+    ev2 = {"run": {}, "rules": {"X": [big, bare]}}
+    assert evidence.hygiene_lines("X", ev2)[2:] == ["- ATTACH_BULK X big: attachment_bytes=262145 (threshold 262144)"]
+    # digest: block sits after Findings, hygiene lines never appear among findings
+    out = tmp_path / "out"
+    evidence.write_outputs(ev, out, rules=[HYG])
+    text = (out / "digest.md").read_text(encoding="utf-8")
+    findings_part, hyg_part = text.split("**Hygiene:**")
+    assert "STEP_FLAT" not in findings_part and "- none" in findings_part
+    assert "- STEP_FLAT" in hyg_part and "- NAME_BLANK" in hyg_part
+
+
+def test_is_blank_name():
+    assert all(evidence.is_blank_name(n) for n in ["verdict", "Events", "ATTACHMENT", "step", "attachment 12"])
+    assert not any(evidence.is_blank_name(n) for n in ["verdict: ok", "attachment x", "open", "steps"])
