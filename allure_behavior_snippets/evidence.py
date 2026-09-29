@@ -705,9 +705,20 @@ def norm_cell(value):
     return re.sub(r"\s+", " ", s).strip()
 
 
+SUBSTRING_MIN_WORDS = 2
+SUBSTRING_MIN_CHARS = 10
+
+
+def _substring_worthy(a, b):
+    """A substring join needs its shorter side to say something: ≥ 2 words and ≥ 10 chars — a
+    one-word cell (`alert`, `hit`, `error`) inside a longer test id is a coincidence, not a key."""
+    short = a if len(a) <= len(b) else b
+    return len(short) >= SUBSTRING_MIN_CHARS and len(short.split()) >= SUBSTRING_MIN_WORDS
+
+
 def match_case(description, records):
     """Records whose case matches the description: exact (normalised) first; else
-    case-insensitive substring either way. Returns ``(kind, [records])`` with kind in
+    case-insensitive substring either way when the shorter side is ≥ 2 words / ≥ 10 chars. Returns ``(kind, [records])`` with kind in
     ``exact`` / ``substring`` / ``none``."""
     d = norm_cell(description)
     exact = [r for r in records if norm_cell(r["case"]) == d]
@@ -715,7 +726,7 @@ def match_case(description, records):
         return "exact", exact
     dl = d.lower()
     sub = [r for r in records
-           if norm_cell(r["case"]).lower() and
+           if _substring_worthy(norm_cell(r["case"]).lower(), dl) and
            (norm_cell(r["case"]).lower() in dl or dl in norm_cell(r["case"]).lower())]
     if sub:
         return "substring", sub

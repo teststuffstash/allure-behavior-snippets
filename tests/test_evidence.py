@@ -648,3 +648,10 @@ def test_cli_page_without_rules_rewrites_every_rule_that_joins(tmp_path):
                   "--spec", str(spec), "--spec-page-out", str(out)])
     text = out.read_text(encoding="utf-8")
     assert "| ∅ unproven row |" in text and not (tmp_path / "o" / "digest.md").exists()
+
+
+def test_substring_join_needs_a_real_phrase_not_one_word():
+    recs = [{"case": "known date, 9 days old → stale alert"}, {"case": "alerts severity set"}]
+    assert evidence.match_case("`alert`", recs) == ("none", [])          # one word: coincidence
+    assert evidence.match_case("hit", [{"case": "hit — law text"}]) == ("none", [])
+    assert evidence.match_case("severity set", recs) == ("substring", [recs[1]])
