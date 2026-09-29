@@ -520,3 +520,84 @@ def test_substring_mark_and_threads_column_on_the_row(tmp_path):
     assert rows[0].startswith("| ✓ | exact row ⚖ | **`cafef00d`** | `0` | `[A]` |")
     assert rows[0].endswith("| 0 | test_j | unthreaded: rc, parsed_from |")
     assert rows[1].startswith("| ✓~ | substring row ⚖ (tail) |")
+
+
+# ---------------------------------------------------------------- human spec page (--spec-page-out)
+
+def _single_file_report(tmp_path, cases):
+    """A minimal Allure 2 single-file index.html embedding ``cases`` as base64 test cases."""
+    import base64
+    body = "".join(
+        f"d('data/test-cases/{c['uid']}.json','"
+        f"{base64.b64encode(json.dumps(c).encode()).decode()}');" for c in cases)
+    path = tmp_path / "index.html"
+    path.write_text(f"<html><script>{body}</script></html>", encoding="utf-8")
+    return path
+
+
+def test_load_report_reads_single_file_and_multi_file(tmp_path):
+    cases = [{"uid": "aa11", "fullName": "tests.test_j#test_j", "name": "test_j[exact row ⚖]"}]
+    single = _single_file_report(tmp_path, cases)
+    assert evidence.load_report(single) == {("tests.test_j#test_j", "test_j[exact row ⚖]"): "aa11"}
+    assert evidence.load_report(tmp_path) == evidence.load_report(single)   # dir holding index.html
+    multi = tmp_path / "multi" / "data" / "test-cases"
+    multi.mkdir(parents=True)
+    (multi / "aa11.json").write_text(json.dumps(cases[0]), encoding="utf-8")
+    assert evidence.load_report(tmp_path / "multi") == evidence.load_report(single)
+
+
+def test_spec_page_rewrites_tables_in_place_for_humans():
+    ev = evidence.build_evidence(_join_results(), generated="2026-09-29")
+    links = {("tests.test_j#test_j", "test_j[exact row ⚖]"): "aa11",
+             ("tests.test_j#test_j", "test_j[Dockerfile carries the stamp]"): "bb22"}
+    page = evidence.render_spec_page(SPEC_PAGE, ev, [JOIN], links,
+                                     "../../evidence/latest/report/index.html#behaviors/")
+    lines = page.splitlines()
+    # the spec's own columns only: no status / attachments / test / threads
+    assert "| description | built_from_env | rc | parsed_from |" in lines
+    assert not any("attachments" in l or "| status |" in l for l in lines)
+    # a passing row: no mark, description linked to the published report, styled by class
+    assert ("| [exact row ⚖](../../evidence/latest/report/index.html#testresult/aa11)"
+            "{: .evidence-row } | `C` | `0` | `[A]` |") in lines
+    # exceptions carry the mark; a row with no uid stays plain text
+    assert any(l.startswith("| ❌ substring row ⚖ (a long parenthetical") for l in lines)
+    assert "| ∅ unproven row | `C` | `0` | per [X](x.md) |" in lines
+    assert any(l.startswith("| mismatch row |") and "`[A, B]` ⇢" in l for l in lines)
+    # the second table is rewritten where it stands, under its own prose
+    i = lines.index("⚖ door rows are prose here.")
+    assert lines[i + 2] == "| door | fragment |"
+    assert "[Dockerfile carries the stamp](" in lines[i + 4]
+    # one note under the first table (what is off + scope); the clean door table has none
+    notes = [l for l in lines if l.startswith("_") and "without evidence" in l]
+    assert len(notes) == 1 and "1 not passing" in notes[0] and "_scope" not in notes[0]
+    assert "modules in this run — test_j" in notes[0]
+    # other rules' tables are untouched
+    assert "| other row | `1` |" in lines and "| nope | `2` |" in lines
+
+
+def test_spec_page_link_text_flattens_links_and_escapes_brackets():
+    assert evidence._link_text("per [X](x.md) [sic]") == "per X \\[sic\\]"
+
+
+def test_cli_writes_the_human_page(tmp_path):
+    res = tmp_path / "res"
+    res.mkdir()
+    for i, r in enumerate(_join_results()):
+        (res / f"{i}-result.json").write_text(json.dumps(r), encoding="utf-8")
+    spec = tmp_path / "page.md"
+    spec.write_text(SPEC_PAGE, encoding="utf-8")
+    report = _single_file_report(tmp_path, [
+        {"uid": "aa11", "fullName": "tests.test_j#test_j", "name": "test_j[exact row ⚖]"}])
+    out = tmp_path / "site" / "page.md"
+    evidence.cli(["--results", str(res), "--out", str(tmp_path / "o"), "--rules", JOIN,
+                  "--spec", str(spec), "--spec-page-out", str(out), "--report", str(report),
+                  "--report-url", "r/index.html"])
+    assert "[exact row ⚖](r/index.html#testresult/aa11){: .evidence-row }" in out.read_text()
+
+
+def test_spec_page_cells_are_as_authored_without_threading_bold():
+    ev = evidence.build_evidence(_join_results(), generated="2026-09-29")
+    for r in ev["rules"][JOIN]:           # every param fully threaded → the fragment would bold
+        r["thread"] = {k: {"given": True, "when": True, "then": True} for k in r["params"]}
+    page = evidence.render_spec_page(SPEC_PAGE, ev, [JOIN])
+    assert "**" not in page.split("### ING-RT-JOIN", 1)[1].split("### NEXT-RULE", 1)[0]

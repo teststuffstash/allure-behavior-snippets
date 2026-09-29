@@ -280,6 +280,7 @@ def record_of(result, results_dirs=()):
     phases, thread, thread_broken = thread_of(result, params, results_dirs)
     record = {
         "case": case,
+        "name": name,
         "world": world_of(result, labels, case, attachments),
         "status": result.get("status") or "unknown",
         "params": params,
@@ -731,7 +732,8 @@ def join_table(header, rows, records):
         stats[kind if kind != "none" else "unproven"] += 1
         matched += recs
         if not recs:
-            joined.append({"status": STATUS_UNPROVEN, "cells": list(row), "record": None,
+            joined.append({"status": STATUS_UNPROVEN, "cells": list(row), "spec": list(row),
+                           "record": None,
                            "kind": kind, "mismatches": [], "unthreaded": []})
             continue
         rec = _worst(recs)
@@ -755,7 +757,8 @@ def join_table(header, rows, records):
             status += SUBSTRING_MARK
         unthreaded = [name for name in header[1:]
                       if name in rec["params"] and not is_threaded(rec, name)]
-        joined.append({"status": status, "cells": cells, "record": rec, "kind": kind,
+        joined.append({"status": status, "cells": cells, "spec": list(row), "record": rec,
+                       "kind": kind,
                        "mismatches": mismatches, "unthreaded": unthreaded})
     return joined, matched, stats
 
@@ -853,6 +856,145 @@ def spec_findings(rule, tables, records):
     return out
 
 
+# ---------------------------------------------------------------- human spec page
+#
+# ``--spec-page-out PATH``: the spec page as a human reads it on the site. Every table under
+# a ``--rules`` heading is rewritten IN PLACE with the spec's own columns only — no status,
+# attachments, test or threads columns (those stay in the fragment/digest). The description
+# cell links to the test in the PUBLISHED Allure report (``--report``: the generate that is
+# served; Allure 2 uids are per-generate, so links are durable only against that one) with
+# the ``evidence-row`` class, which the site styles as plain text. A row that is fine carries
+# no mark; exceptions prefix the description: ∅ no evidence in this run, ❌ failed or broken,
+# ⚠ skipped;
+# a cell the test contradicts reads ``spec ⇢ actual``. One italic line under a table names
+# what is off and the run's scope — absent when the table is clean.
+
+ROW_LINK_CLASS = "evidence-row"
+_REPORT_TC = re.compile(r"d\('data/test-cases/([0-9a-f]+)\.json','([A-Za-z0-9+/=]+)'")
+
+
+def load_report(path):
+    """``{(fullName, name): uid}`` from a generated Allure 2 report: a multi-file report dir
+    (``data/test-cases/*.json``) or a single-file ``index.html`` (embedded base64 test cases),
+    or a dir holding only that ``index.html``."""
+    import base64
+    p = Path(path)
+    cases = []
+    tc_dir = p / "data" / "test-cases"
+    if p.is_dir() and tc_dir.is_dir():
+        for f in sorted(tc_dir.glob("*.json")):
+            cases.append(json.loads(f.read_text(encoding="utf-8")))
+    else:
+        html = p / "index.html" if p.is_dir() else p
+        for _, b64 in _REPORT_TC.findall(html.read_text(encoding="utf-8")):
+            cases.append(json.loads(base64.b64decode(b64).decode("utf-8")))
+    return {(c.get("fullName"), c.get("name")): c["uid"] for c in cases if c.get("uid")}
+
+
+def row_link(report_url, uid):
+    """``<report>#testresult/<uid>`` — any fragment already on the URL is replaced."""
+    return f"{report_url.split('#', 1)[0]}#testresult/{uid}"
+
+
+def _link_text(desc):
+    """Description as link text: inner markdown links flattened, brackets escaped."""
+    return _MD_LINK.sub(r"\1", desc).replace("[", "\\[").replace("]", "\\]")
+
+
+def human_status_mark(j):
+    """'' for a row that is fine; ∅ / ❌ / ⚠ otherwise (≠ lives in its cell)."""
+    if j["record"] is None:
+        return STATUS_UNPROVEN
+    s = j["record"]["status"]
+    return "" if s == "passed" else STATUS_ICON.get(s, s)
+
+
+def render_human_table(header, joined, links, report_url):
+    """The spec table as authored, description linked, exceptions marked."""
+    lines = ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
+    for j in joined:
+        # as authored (no threading bold); only a contradicted cell reads ``spec ⇢ actual``
+        wrong = {name for name, _, _ in j["mismatches"]}
+        cells = [(j["cells"][i] if name in wrong else c).replace("\n", " ")
+                 for i, (name, c) in enumerate(zip(header, j["spec"]))]
+        cells += [c.replace("\n", " ") for c in j["spec"][len(header):]]
+        desc = cells[0] if cells else ""
+        rec = j["record"]
+        uid = links.get((rec.get("test"), rec.get("name"))) if rec else None
+        if uid and report_url:
+            desc = f"[{_link_text(desc)}]({row_link(report_url, uid)}){{: .{ROW_LINK_CLASS} }}"
+        mark = human_status_mark(j)
+        cells[0] = f"{mark} {desc}" if mark else desc
+        cells += [""] * (len(header) - len(cells))
+        lines.append("| " + " | ".join(cells[:len(header)]) + " |")
+    return lines
+
+
+def human_note(joined, run, records):
+    """One italic line naming what is off in a table; None when it is clean."""
+    unproven = sum(1 for j in joined if j["record"] is None)
+    bad = sum(1 for j in joined if j["record"] is not None and j["record"]["status"] != "passed")
+    cells = sum(len(j["mismatches"]) for j in joined)
+    parts = []
+    if unproven:
+        parts.append(f"{unproven} {STATUS_UNPROVEN} without evidence in this run")
+    if bad:
+        parts.append(f"{bad} not passing")
+    if cells:
+        parts.append(f"{cells} cell{'s' if cells != 1 else ''} {STATUS_MISMATCH} contradicted by the test")
+    if not parts:
+        return None
+    note = " · ".join(parts)
+    if unproven:
+        note += " — " + scope_line(run, records).strip("_")
+    return f"_{note}_"
+
+
+def _table_spans(lines, rule):
+    """``[(start, end)]`` line spans (end exclusive) of the GFM tables under ``rule``'s heading."""
+    spans, inside, i = [], False, 0
+    while i < len(lines):
+        m = _HEADING.match(lines[i])
+        if m:
+            text = m.group(2)
+            inside = text == rule or text.startswith(rule + " ")
+            i += 1
+            continue
+        if (inside and lines[i].lstrip().startswith("|") and i + 1 < len(lines)
+                and _TABLE_SEP.match(lines[i + 1].strip())):
+            start = i
+            i += 2
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                i += 1
+            spans.append((start, i))
+            continue
+        i += 1
+    return spans
+
+
+def render_spec_page(text, evidence, rules, links=None, report_url=None):
+    """The spec page with every table under each rule in ``rules`` rewritten for humans."""
+    links = links or {}
+    lines = text.split("\n")
+    replacements = []
+    for rule in rules:
+        recs = evidence["rules"].get(rule, [])
+        tables = spec_tables(text, rule)
+        spans = _table_spans(lines, rule)
+        if len(tables) != len(spans):
+            raise ValueError(f"{rule}: {len(tables)} tables parsed but {len(spans)} spans found")
+        per_table, _, _ = join_rule(tables, recs)
+        for (start, end), (header, joined) in zip(spans, per_table):
+            body = render_human_table(header, joined, links, report_url)
+            note = human_note(joined, evidence["run"], recs)
+            if note:
+                body += ["", note]
+            replacements.append((start, end, body))
+    for start, end, body in sorted(replacements, reverse=True):
+        lines[start:end] = body
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------- driver
 
 def write_outputs(evidence, out_dir, rules=None, baseline=None, report_url=None, spec=None):
@@ -903,7 +1045,15 @@ def cli(argv=None):
     ap.add_argument("--rules", default=None, help="comma-separated rule IDs for digest.md")
     ap.add_argument("--baseline", default=None, metavar="evidence.json",
                     help="previous evidence.json for the digest delta")
-    ap.add_argument("--report-url", default=None, help="Allure report URL (footer only)")
+    ap.add_argument("--report-url", default=None,
+                    help="URL of the published Allure report: the footer, and with --report "
+                         "the per-row links of --spec-page-out")
+    ap.add_argument("--report", default=None, metavar="REPORT",
+                    help="the PUBLISHED generated Allure report (dir, or single-file index.html): "
+                         "row links resolve against its uids")
+    ap.add_argument("--spec-page-out", default=None, metavar="PAGE.md",
+                    help="write the --spec page with each --rules table rewritten for humans "
+                         "(spec columns only, linked descriptions, exceptions marked)")
     ap.add_argument("--spec", default=None, metavar="PAGE.md",
                     help="spec page: for each --rules rule, the tables under its `### RULE` "
                          "heading are joined to the evidence and emitted as the fragment")
@@ -917,7 +1067,16 @@ def cli(argv=None):
     spec = load_spec(args.spec, rules) if args.spec else None
     if args.spec and not rules:
         ap.error("--spec needs --rules (which headings to join)")
+    if args.spec_page_out and not spec:
+        ap.error("--spec-page-out needs --spec and --rules")
     written = write_outputs(evidence, args.out, rules, baseline, args.report_url, spec)
+    if args.spec_page_out:
+        links = load_report(args.report) if args.report else {}
+        page = render_spec_page(Path(args.spec).read_text(encoding="utf-8"), evidence, rules,
+                                links, args.report_url)
+        Path(args.spec_page_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.spec_page_out).write_text(page, encoding="utf-8")
+        written.append(args.spec_page_out)
     n = sum(len(v) for v in evidence["rules"].values())
     print(f"{n} records across {len(evidence['rules'])} rules → {args.out} ({len(written)} files)")
 
