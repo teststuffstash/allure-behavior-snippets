@@ -524,12 +524,16 @@ def test_substring_mark_and_threads_column_on_the_row(tmp_path):
 
 # ---------------------------------------------------------------- human spec page (--spec-page-out)
 
-def _single_file_report(tmp_path, cases):
-    """A minimal Allure 2 single-file index.html embedding ``cases`` as base64 test cases."""
+def _single_file_report(tmp_path, cases, behaviors=None):
+    """A minimal Allure 2 single-file index.html embedding ``cases`` as base64 test cases (and
+    ``behaviors`` as data/behaviors.json when given)."""
     import base64
     body = "".join(
         f"d('data/test-cases/{c['uid']}.json','"
         f"{base64.b64encode(json.dumps(c).encode()).decode()}');" for c in cases)
+    if behaviors is not None:
+        body += ("d('data/behaviors.json','"
+                 f"{base64.b64encode(json.dumps(behaviors).encode()).decode()}');")
     path = tmp_path / "index.html"
     path.write_text(f"<html><script>{body}</script></html>", encoding="utf-8")
     return path
@@ -538,7 +542,7 @@ def _single_file_report(tmp_path, cases):
 def test_load_report_reads_single_file_and_multi_file(tmp_path):
     cases = [{"uid": "aa11", "fullName": "tests.test_j#test_j", "name": "test_j[exact row ⚖]"}]
     single = _single_file_report(tmp_path, cases)
-    assert evidence.load_report(single) == {("tests.test_j#test_j", "test_j[exact row ⚖]"): "aa11"}
+    assert evidence.load_report(single) == {("tests.test_j#test_j", "test_j[exact row ⚖]"): "testresult/aa11"}
     assert evidence.load_report(tmp_path) == evidence.load_report(single)   # dir holding index.html
     multi = tmp_path / "multi" / "data" / "test-cases"
     multi.mkdir(parents=True)
@@ -622,7 +626,7 @@ def test_load_report_reads_the_gzipped_single_file(tmp_path):
     gz = tmp_path / "gz" / "index.html"
     gz.parent.mkdir()
     gz.write_bytes(gzip.compress(single.read_bytes()))
-    assert evidence.load_report(gz) == {("tests.t#t", "t[x]"): "cc33"}
+    assert evidence.load_report(gz) == {("tests.t#t", "t[x]"): "testresult/cc33"}
 
 
 def test_plain_fragment_links_cases_and_joined_fragment_needs_a_join(tmp_path):
@@ -655,3 +659,21 @@ def test_substring_join_needs_a_real_phrase_not_one_word():
     assert evidence.match_case("`alert`", recs) == ("none", [])          # one word: coincidence
     assert evidence.match_case("hit", [{"case": "hit — law text"}]) == ("none", [])
     assert evidence.match_case("severity set", recs) == ("substring", [recs[1]])
+
+
+def test_links_open_the_behaviors_tree_at_the_rule(tmp_path):
+    """The route is ``behaviors/<story uid>/<test uid>`` — the report opens with the tree expanded
+    to the rule (the v0.1–0.3 link); a test outside the tree falls back to ``testresult/<uid>``."""
+    tree = {"uid": "root", "name": "behaviors", "children": [
+        {"uid": "e1", "name": "ingestion/riigiteataja", "children": [
+            {"uid": "f1", "name": "Build step", "children": [
+                {"uid": "s1", "name": "ING-RT-JOIN", "children": [
+                    {"uid": "aa11", "parentUid": "s1", "name": "exact row ⚖", "status": "passed"}]}]}]}]}
+    cases = [{"uid": "aa11", "fullName": "tests.test_j#test_j", "name": "test_j[exact row ⚖]"},
+             {"uid": "bb22", "fullName": "tests.t#t", "name": "t[orphan]"}]
+    links = evidence.load_report(_single_file_report(tmp_path, cases, tree))
+    assert links[("tests.test_j#test_j", "test_j[exact row ⚖]")] == "behaviors/s1/aa11"
+    assert links[("tests.t#t", "t[orphan]")] == "testresult/bb22"
+    assert (evidence.row_link("https://s/r/index.html#behaviors/", "behaviors/s1/aa11")
+            == "https://s/r/index.html#behaviors/s1/aa11")
+    assert evidence.row_link("r/index.html", "aa11") == "r/index.html#testresult/aa11"

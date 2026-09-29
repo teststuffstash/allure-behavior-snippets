@@ -888,32 +888,64 @@ def spec_findings(rule, tables, records):
 
 ROW_LINK_CLASS = "evidence-row"
 _REPORT_TC = re.compile(r"d\('data/test-cases/([0-9a-f]+)\.json','([A-Za-z0-9+/=]+)'")
+_REPORT_BEHAVIORS = re.compile(r"d\('data/behaviors\.json','([A-Za-z0-9+/=]+)'")
+
+
+def _behavior_parents(tree):
+    """``{test-case uid: story-node uid}`` from a report's behaviors.json tree."""
+    out, stack = {}, [tree]
+    while stack:
+        node = stack.pop()
+        kids = node.get("children")
+        if kids is None:
+            if node.get("uid") and node.get("parentUid"):
+                out[node["uid"]] = node["parentUid"]
+        else:
+            stack.extend(kids)
+    return out
 
 
 def load_report(path):
-    """``{(fullName, name): uid}`` from a generated Allure 2 report: a multi-file report dir
-    (``data/test-cases/*.json``) or a single-file ``index.html`` (embedded base64 test cases,
-    plain or gzipped), or a dir holding only that ``index.html``."""
+    """``{(fullName, name): route}`` from a generated Allure 2 report: a multi-file report dir
+    (``data/test-cases/*.json`` + ``data/behaviors.json``) or a single-file ``index.html``
+    (the same files embedded base64, plain or gzipped), or a dir holding only that
+    ``index.html``. ``route`` is ``behaviors/<story uid>/<test uid>`` — the report opens the
+    test with the Behaviors tree expanded to its rule (the v0.1–0.3 link) — or
+    ``testresult/<uid>`` for a test the tree does not carry."""
     import base64
     import gzip
     p = Path(path)
-    cases = []
+    cases, tree = [], None
     tc_dir = p / "data" / "test-cases"
     if p.is_dir() and tc_dir.is_dir():
         for f in sorted(tc_dir.glob("*.json")):
             cases.append(json.loads(f.read_text(encoding="utf-8")))
+        beh = p / "data" / "behaviors.json"
+        if beh.is_file():
+            tree = json.loads(beh.read_text(encoding="utf-8"))
     else:
         raw = (p / "index.html" if p.is_dir() else p).read_bytes()
         if raw[:2] == b"\x1f\x8b":          # the gzipped single-file report as published
             raw = gzip.decompress(raw)
-        for _, b64 in _REPORT_TC.findall(raw.decode("utf-8")):
+        html = raw.decode("utf-8")
+        for _, b64 in _REPORT_TC.findall(html):
             cases.append(json.loads(base64.b64decode(b64).decode("utf-8")))
-    return {(c.get("fullName"), c.get("name")): c["uid"] for c in cases if c.get("uid")}
+        m = _REPORT_BEHAVIORS.search(html)
+        if m:
+            tree = json.loads(base64.b64decode(m.group(1)).decode("utf-8"))
+    parents = _behavior_parents(tree) if tree else {}
+    return {(c.get("fullName"), c.get("name")):
+            (f"behaviors/{parents[c['uid']]}/{c['uid']}" if c["uid"] in parents
+             else f"testresult/{c['uid']}")
+            for c in cases if c.get("uid")}
 
 
-def row_link(report_url, uid):
-    """``<report>#testresult/<uid>`` — any fragment already on the URL is replaced."""
-    return f"{report_url.split('#', 1)[0]}#testresult/{uid}"
+def row_link(report_url, route):
+    """``<report>#<route>`` (a ``load_report`` route; a bare uid means ``testresult/<uid>``) —
+    any fragment already on the URL is replaced."""
+    if "/" not in route:
+        route = f"testresult/{route}"
+    return f"{report_url.split('#', 1)[0]}#{route}"
 
 
 def _link_text(desc):
