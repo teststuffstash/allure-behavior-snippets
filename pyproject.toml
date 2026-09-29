@@ -12,7 +12,7 @@ svgwrite = ">=1.4.3"
 
 
 [tool.poetry.group.dev.dependencies]
-pytest-playwright = "^0.8.0"
+pytest-playwright = "^0.9.0"
 # Exact pin: must match the mcr.microsoft.com/playwright/python image tag
 # in tests/Dockerfile — browsers are baked into that image per version.
 playwright = "1.61.0"
