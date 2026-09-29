@@ -601,3 +601,50 @@ def test_spec_page_cells_are_as_authored_without_threading_bold():
         r["thread"] = {k: {"given": True, "when": True, "then": True} for k in r["params"]}
     page = evidence.render_spec_page(SPEC_PAGE, ev, [JOIN])
     assert "**" not in page.split("### ING-RT-JOIN", 1)[1].split("### NEXT-RULE", 1)[0]
+
+
+def test_spec_page_drops_the_rules_own_evidence_block_and_skips_rules_that_join_nothing():
+    ev = evidence.build_evidence(_join_results() + [
+        _result("test_n[unrelated case]", "tests.test_n#test_n", "passed", story="NEXT-RULE",
+                params={"y": "'2'"})], generated="2026-09-29")
+    page = evidence.render_spec_page(SPEC_PAGE, ev)          # default: every rule with evidence
+    join = page.split("### ING-RT-JOIN", 1)[1].split("### NEXT-RULE", 1)[0]
+    assert '--8<-- "ING-RT-JOIN.md"' not in join and "<details>" not in join
+    # NEXT-RULE has evidence but no row joins: its table stays exactly as authored
+    assert page.split("### NEXT-RULE", 1)[1] == SPEC_PAGE.split("### NEXT-RULE", 1)[1]
+    assert "| other row | `1` |" in page                        # no evidence at all: untouched
+
+
+def test_load_report_reads_the_gzipped_single_file(tmp_path):
+    import gzip
+    single = _single_file_report(tmp_path, [
+        {"uid": "cc33", "fullName": "tests.t#t", "name": "t[x]"}])
+    gz = tmp_path / "gz" / "index.html"
+    gz.parent.mkdir()
+    gz.write_bytes(gzip.compress(single.read_bytes()))
+    assert evidence.load_report(gz) == {("tests.t#t", "t[x]"): "cc33"}
+
+
+def test_plain_fragment_links_cases_and_joined_fragment_needs_a_join(tmp_path):
+    ev = evidence.build_evidence(_join_results(), generated="2026-09-29")
+    links = {("tests.test_j#test_j", "test_j[an unspecified door]"): "dd44"}
+    # a spec whose tables join nothing → the plain fragment, not an all-∅ joined one
+    spec = {JOIN: [(["description", "x"], [["no such row", "`1`"]])]}
+    evidence.write_outputs(ev, tmp_path, spec=spec, links=links, report_url="https://s/r/index.html")
+    md = (tmp_path / f"{JOIN}.md").read_text(encoding="utf-8")
+    assert "| status | case |" in md.splitlines()[0]
+    assert "[an unspecified door](https://s/r/index.html#testresult/dd44)" in md
+
+
+def test_cli_page_without_rules_rewrites_every_rule_that_joins(tmp_path):
+    res = tmp_path / "res"
+    res.mkdir()
+    for i, r in enumerate(_join_results()):
+        (res / f"{i}-result.json").write_text(json.dumps(r), encoding="utf-8")
+    spec = tmp_path / "page.md"
+    spec.write_text(SPEC_PAGE, encoding="utf-8")
+    out = tmp_path / "page.out.md"
+    evidence.cli(["--results", str(res), "--out", str(tmp_path / "o"),
+                  "--spec", str(spec), "--spec-page-out", str(out)])
+    text = out.read_text(encoding="utf-8")
+    assert "| ∅ unproven row |" in text and not (tmp_path / "o" / "digest.md").exists()

@@ -366,8 +366,9 @@ def _footer(run, report_url=None):
     return footer
 
 
-def table_lines(records, max_rows=MAX_ROWS, max_cell=MAX_CELL):
-    """GFM table lines for some records (+ overflow line when ``max_rows`` elides)."""
+def table_lines(records, max_rows=MAX_ROWS, max_cell=MAX_CELL, links=None, report_url=None):
+    """GFM table lines for some records (+ overflow line when ``max_rows`` elides). With
+    ``links`` + ``report_url`` the case cell links to the test in the published report."""
     has_world = any(r.get("world") for r in records)
     has_failure = any(r["status"] not in ("passed", "skipped") for r in records)
     param_names = param_columns(records)
@@ -377,7 +378,11 @@ def table_lines(records, max_rows=MAX_ROWS, max_cell=MAX_CELL):
     lines = ["| " + " | ".join(cols) + " |", "|" + "|".join("---" for _ in cols) + "|"]
     shown = records if max_rows is None else records[:max_rows]
     for r in shown:
-        row = [STATUS_ICON.get(r["status"], r["status"]), cell(r["case"], max_cell)]
+        case = cell(r["case"], max_cell)
+        uid = (links or {}).get((r.get("test"), r.get("name")))
+        if uid and report_url:
+            case = f"[{_link_text(case)}]({row_link(report_url, uid)})"
+        row = [STATUS_ICON.get(r["status"], r["status"]), case]
         if has_world:
             row.append(cell(r.get("world"), max_cell))
         row += [_param_cell(r, k, max_cell) for k in param_names]
@@ -394,9 +399,10 @@ def table_lines(records, max_rows=MAX_ROWS, max_cell=MAX_CELL):
     return lines
 
 
-def render_table(records, run, report_url=None, max_rows=MAX_ROWS, max_cell=MAX_CELL):
+def render_table(records, run, report_url=None, max_rows=MAX_ROWS, max_cell=MAX_CELL, links=None):
     """GFM table lines for one rule's records (+ overflow line + run footer)."""
-    return table_lines(records, max_rows, max_cell) + ["", _footer(run, report_url)]
+    return (table_lines(records, max_rows, max_cell, links, report_url)
+            + ["", _footer(run, report_url)])
 
 
 def render_digest_tables(records, run, report_url=None):
@@ -875,9 +881,10 @@ _REPORT_TC = re.compile(r"d\('data/test-cases/([0-9a-f]+)\.json','([A-Za-z0-9+/=
 
 def load_report(path):
     """``{(fullName, name): uid}`` from a generated Allure 2 report: a multi-file report dir
-    (``data/test-cases/*.json``) or a single-file ``index.html`` (embedded base64 test cases),
-    or a dir holding only that ``index.html``."""
+    (``data/test-cases/*.json``) or a single-file ``index.html`` (embedded base64 test cases,
+    plain or gzipped), or a dir holding only that ``index.html``."""
     import base64
+    import gzip
     p = Path(path)
     cases = []
     tc_dir = p / "data" / "test-cases"
@@ -885,8 +892,10 @@ def load_report(path):
         for f in sorted(tc_dir.glob("*.json")):
             cases.append(json.loads(f.read_text(encoding="utf-8")))
     else:
-        html = p / "index.html" if p.is_dir() else p
-        for _, b64 in _REPORT_TC.findall(html.read_text(encoding="utf-8")):
+        raw = (p / "index.html" if p.is_dir() else p).read_bytes()
+        if raw[:2] == b"\x1f\x8b":          # the gzipped single-file report as published
+            raw = gzip.decompress(raw)
+        for _, b64 in _REPORT_TC.findall(raw.decode("utf-8")):
             cases.append(json.loads(base64.b64decode(b64).decode("utf-8")))
     return {(c.get("fullName"), c.get("name")): c["uid"] for c in cases if c.get("uid")}
 
@@ -972,17 +981,60 @@ def _table_spans(lines, rule):
     return spans
 
 
-def render_spec_page(text, evidence, rules, links=None, report_url=None):
-    """The spec page with every table under each rule in ``rules`` rewritten for humans."""
+def rule_joins(tables, records):
+    """True when at least one row of the rule's spec tables matches a record — the rule has
+    opted in to the joined render (its tables are keyed by the test ids)."""
+    if not tables or not records:
+        return False
+    _, _, stats = join_rule(tables, records)
+    return stats["rows"] > stats["unproven"]
+
+
+def _evidence_block_span(lines, rule):
+    """``(start, end)`` of the ``<details …>…</details>`` block under ``rule``'s heading that
+    transcludes the rule's own fragment (``--8<-- "RULE.md"``), or None."""
+    inside, start = False, None
+    for i, line in enumerate(lines):
+        m = _HEADING.match(line)
+        if m:
+            if inside:
+                return None
+            text = m.group(2)
+            inside = text == rule or text.startswith(rule + " ")
+            continue
+        if not inside:
+            continue
+        if line.lstrip().startswith("<details"):
+            start = i
+        elif line.strip() == "</details>" and start is not None:
+            if any(f'"{rule}.md"' in l for l in lines[start:i]):
+                end = i + 1
+                if end < len(lines) and not lines[end].strip():
+                    end += 1
+                return start, end
+            start = None
+    return None
+
+
+def render_spec_page(text, evidence, rules=None, links=None, report_url=None):
+    """The spec page with the tables of every rule in ``rules`` (default: every rule with
+    evidence) that JOINS — at least one row matched — rewritten for humans. The rule's
+    ``<details>`` block transcluding its own fragment goes: the tables now carry the evidence.
+    A rule whose tables join nothing stays as authored (its fragment keeps rendering)."""
     links = links or {}
     lines = text.split("\n")
     replacements = []
-    for rule in rules:
+    for rule in (rules if rules is not None else list(evidence["rules"])):
         recs = evidence["rules"].get(rule, [])
         tables = spec_tables(text, rule)
+        if not rule_joins(tables, recs):
+            continue
         spans = _table_spans(lines, rule)
         if len(tables) != len(spans):
             raise ValueError(f"{rule}: {len(tables)} tables parsed but {len(spans)} spans found")
+        block = _evidence_block_span(lines, rule)
+        if block:
+            replacements.append((block[0], block[1], []))
         per_table, _, _ = join_rule(tables, recs)
         for (start, end), (header, joined) in zip(spans, per_table):
             body = render_human_table(header, joined, links, report_url)
@@ -997,7 +1049,8 @@ def render_spec_page(text, evidence, rules, links=None, report_url=None):
 
 # ---------------------------------------------------------------- driver
 
-def write_outputs(evidence, out_dir, rules=None, baseline=None, report_url=None, spec=None):
+def write_outputs(evidence, out_dir, rules=None, baseline=None, report_url=None, spec=None,
+                  links=None):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     (out / "evidence.json").write_text(
@@ -1005,10 +1058,10 @@ def write_outputs(evidence, out_dir, rules=None, baseline=None, report_url=None,
     written = ["evidence.json"]
     spec = spec or {}
     for rule, recs in evidence["rules"].items():
-        if spec.get(rule):
+        if rule_joins(spec.get(rule), recs):
             body = render_joined(spec[rule], recs, evidence["run"], report_url)
         else:
-            body = render_table(recs, evidence["run"], report_url)
+            body = render_table(recs, evidence["run"], report_url, links=links)
         (out / f"{rule}.md").write_text("\n".join(body) + "\n", encoding="utf-8")
         written.append(f"{rule}.md")
     # a rule the spec lists but no record carries: the joined table is all ∅
@@ -1052,8 +1105,9 @@ def cli(argv=None):
                     help="the PUBLISHED generated Allure report (dir, or single-file index.html): "
                          "row links resolve against its uids")
     ap.add_argument("--spec-page-out", default=None, metavar="PAGE.md",
-                    help="write the --spec page with each --rules table rewritten for humans "
-                         "(spec columns only, linked descriptions, exceptions marked)")
+                    help="write the --spec page with the tables of every rule that joins (of "
+                         "--rules, default every rule with evidence) rewritten for humans: "
+                         "spec columns only, linked descriptions, exceptions marked")
     ap.add_argument("--spec", default=None, metavar="PAGE.md",
                     help="spec page: for each --rules rule, the tables under its `### RULE` "
                          "heading are joined to the evidence and emitted as the fragment")
@@ -1064,16 +1118,17 @@ def cli(argv=None):
     if args.baseline:
         baseline = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
     rules = [r.strip() for r in args.rules.split(",") if r.strip()] if args.rules else None
-    spec = load_spec(args.spec, rules) if args.spec else None
-    if args.spec and not rules:
-        ap.error("--spec needs --rules (which headings to join)")
-    if args.spec_page_out and not spec:
-        ap.error("--spec-page-out needs --spec and --rules")
-    written = write_outputs(evidence, args.out, rules, baseline, args.report_url, spec)
+    if args.spec and not rules and not args.spec_page_out:
+        ap.error("--spec needs --rules (which headings to join), or --spec-page-out")
+    page_rules = rules or list(evidence["rules"])
+    spec = load_spec(args.spec, page_rules) if args.spec else None
+    if args.spec_page_out and not args.spec:
+        ap.error("--spec-page-out needs --spec")
+    links = load_report(args.report) if args.report else {}
+    written = write_outputs(evidence, args.out, rules, baseline, args.report_url, spec, links)
     if args.spec_page_out:
-        links = load_report(args.report) if args.report else {}
-        page = render_spec_page(Path(args.spec).read_text(encoding="utf-8"), evidence, rules,
-                                links, args.report_url)
+        page = render_spec_page(Path(args.spec).read_text(encoding="utf-8"), evidence,
+                                page_rules, links, args.report_url)
         Path(args.spec_page_out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.spec_page_out).write_text(page, encoding="utf-8")
         written.append(args.spec_page_out)
