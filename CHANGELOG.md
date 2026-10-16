@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.1 — 2026-10-16
+
+- `evidence-pack` also writes `evidence/<RULE>.json`, one touched rule's records per file. On the
+  first real pack (homelab gateway, 14 touched rules) `evidence.json` was ~165k tokens; one rule's
+  file is ~3–16k. The evidence brief now points the reviewer at the per-rule file.
+
 ## v0.5.0 — 2026-10-16
 
 The portable spec / evidence / review process (homelab ADR-156). Additions only: the v0.4.x

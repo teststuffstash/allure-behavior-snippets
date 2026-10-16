@@ -84,6 +84,10 @@ def test_full_pack(repo, tmp_path, capsys):
     assert list(ev["rules"]) == ["API-ORDERS-CREATE"]          # scoped to touched rules
     assert {r["case"] for r in ev["rules"]["API-ORDERS-CREATE"]} == RESULT_FILES
     assert list(json.loads((out / "baseline-evidence.json").read_text())["rules"]) == ["API-ORDERS-CREATE"]
+    per_rule = json.loads((out / "evidence" / "API-ORDERS-CREATE.json").read_text())
+    assert per_rule["rule"] == "API-ORDERS-CREATE"
+    assert per_rule["records"] == ev["rules"]["API-ORDERS-CREATE"]   # the same records, one rule per file
+    assert sorted(p.name for p in (out / "evidence").iterdir()) == ["API-ORDERS-CREATE.json"]
 
     digest = (out / "digest.md").read_text()
     assert f"`git.commit={repo.head[:12]}` = this head" in digest
