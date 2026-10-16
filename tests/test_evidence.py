@@ -677,3 +677,47 @@ def test_links_open_the_behaviors_tree_at_the_rule(tmp_path):
     assert (evidence.row_link("https://s/r/index.html#behaviors/", "behaviors/s1/aa11")
             == "https://s/r/index.html#behaviors/s1/aa11")
     assert evidence.row_link("r/index.html", "aa11") == "r/index.html#testresult/aa11"
+
+
+DIVIDED_PAGE = """# page
+
+## GW-DIVIDED
+
+| description | role || allowed |
+|---|---||---|
+| a reader | `reader` || true |
+
+### Edge cases
+
+| description | role || allowed |
+|---|---||---|
+| nobody | `` || false |
+
+### GW-NESTED
+
+| description | x |
+|---|---|
+| nested row | 1 |
+
+## GW-NEXT
+
+| description | y |
+|---|---|
+| next row | 2 |
+"""
+
+
+def test_spec_tables_read_the_divider_and_plain_subsections():
+    # the `||` input/expected divider is a table, not prose (gateway decision tables, rule shape)
+    tables = evidence.spec_tables(DIVIDED_PAGE, "GW-DIVIDED")
+    assert [rows for _, rows in tables] == [[["a reader", "`reader`", "", "true"]],
+                                           [["nobody", "``", "", "false"]]]
+    # a deeper plain sub-heading stays inside the rule; a deeper RULE heading ends it
+    assert evidence.spec_tables(DIVIDED_PAGE, "GW-NESTED") == [(["description", "x"], [["nested row", "1"]])]
+    assert evidence.spec_tables(DIVIDED_PAGE, "GW-NEXT")[0][1] == [["next row", "2"]]
+
+
+def test_table_spans_follow_the_same_section_rule():
+    lines = DIVIDED_PAGE.splitlines()
+    spans = evidence._table_spans(lines, "GW-DIVIDED")
+    assert [lines[a] for a, _ in spans] == ["| description | role || allowed |"] * 2

@@ -638,7 +638,18 @@ def render_digest(rules, evidence, baseline=None, report_url=None, spec=None):
 # matching no spec row are listed under ``_Not in the spec:_`` (ROW_UNSPECIFIED).
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
-_TABLE_SEP = re.compile(r"^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$")
+# the first cell is dashes; a later cell may be EMPTY — the `||` that divides a decision table's
+# inputs from its expected columns (`|---|---||---|`, RULES.md's table shape)
+_TABLE_SEP = re.compile(r"^\|?\s*:?-{3,}:?\s*(\|\s*(:?-{3,}:?)?\s*)*\|?\s*$")
+# a heading that names a requirement ID (`GW-SESSIONS-ADMIT`, `ING-RT-BUILD-CORPUS`) — a rule's
+# section ends at the next one even when it is deeper
+_RULE_HEADING = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+(?:\s|$)")
+
+
+def _section_ends(level, rule_level, text):
+    """A rule's section ends at a heading of its own level or higher, or at another rule's
+    heading at any depth; a deeper plain sub-heading (`### Edge cases`) stays inside."""
+    return level <= rule_level or bool(_RULE_HEADING.match(text))
 STATUS_UNPROVEN = "∅"
 STATUS_MISMATCH = "≠"
 SUBSTRING_MARK = "~"   # appended to the status of a row whose description matched loosely
@@ -664,13 +675,15 @@ def _split_row(line):
 
 def spec_tables(text, rule):
     """``[(header, rows)]`` — every GFM table under the heading whose text is ``rule`` (or
-    starts with it), up to the next heading of any level. ``rows`` are lists of cells."""
+    starts with it), up to the end of its section (``_section_ends``). ``rows`` are lists of cells."""
     lines = text.splitlines()
     start = None
+    rule_level = 0
     for i, line in enumerate(lines):
         m = _HEADING.match(line)
         if m and (m.group(2) == rule or m.group(2).startswith(rule + " ")):
             start = i + 1
+            rule_level = len(m.group(1))
             break
     if start is None:
         return []
@@ -678,7 +691,8 @@ def spec_tables(text, rule):
     i = start
     while i < len(lines):
         line = lines[i]
-        if _HEADING.match(line):
+        h = _HEADING.match(line)
+        if h and _section_ends(len(h.group(1)), rule_level, h.group(2)):
             break
         if line.lstrip().startswith("|") and i + 1 < len(lines) and _TABLE_SEP.match(lines[i + 1]):
             header = _split_row(line)
@@ -1004,12 +1018,15 @@ def human_note(joined, run, records):
 
 def _table_spans(lines, rule):
     """``[(start, end)]`` line spans (end exclusive) of the GFM tables under ``rule``'s heading."""
-    spans, inside, i = [], False, 0
+    spans, inside, rule_level, i = [], False, 0, 0
     while i < len(lines):
         m = _HEADING.match(lines[i])
         if m:
-            text = m.group(2)
-            inside = text == rule or text.startswith(rule + " ")
+            text, level = m.group(2), len(m.group(1))
+            if text == rule or text.startswith(rule + " "):
+                inside, rule_level = True, level
+            elif inside and _section_ends(level, rule_level, text):
+                inside = False
             i += 1
             continue
         if (inside and lines[i].lstrip().startswith("|") and i + 1 < len(lines)
