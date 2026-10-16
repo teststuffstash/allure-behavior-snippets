@@ -95,7 +95,10 @@ def test_finding_contract():
 
 def test_version_matches_pyproject():
     root = Path(allure_behavior_snippets.__file__).resolve().parent.parent
-    meta = tomllib.loads((root / "pyproject.toml").read_text())
+    pyproject = root / "pyproject.toml"
+    if not pyproject.is_file():  # the test image copies the package + tests only
+        pytest.skip("pyproject.toml not in this checkout")
+    meta = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     assert meta["tool"]["poetry"]["version"] == allure_behavior_snippets.__version__
     scripts = meta["tool"]["poetry"]["scripts"]
     # v0.4.x entry points stay; v0.5 adds three
