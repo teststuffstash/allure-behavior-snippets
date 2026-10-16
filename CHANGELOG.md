@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.2 — 2026-10-16
+
+The spec join found NO tables on the first island that used the decision-table shape (homelab
+gateway: 0 of 14 rules joined).
+- `_TABLE_SEP` accepts an EMPTY separator cell: the `||` that divides a decision table's inputs
+  from its expected columns (`|---|---||---|`). Before, such a table read as prose.
+- A rule's section runs to the next heading of its own level or higher, or the next heading that
+  names another requirement ID; a deeper plain sub-heading (`### Edge cases`) stays inside. Before,
+  any sub-heading ended it. `spec_tables` and the spec-page rewrite (`_table_spans`) share the rule.
+On the gateway's 219 records: 14/14 rules now find their tables; mechanical findings 26 → 103
+(ROW_UNPROVEN, ROW_UNSPECIFIED, CELL_MISMATCH now computed).
+
 ## v0.5.1 — 2026-10-16
 
 - `evidence-pack` also writes `evidence/<RULE>.json`, one touched rule's records per file. On the
