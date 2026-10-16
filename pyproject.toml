@@ -1,10 +1,12 @@
 [tool.poetry]
 name = "allure-behavior-snippets"
-version = "0.4.2"
-description = "Create image with tests for each Allure behavior"
+version = "0.5.0"
+description = "Allure evidence tools + the portable spec/evidence/review process (rules, conventions, reviewer briefs, context pack)"
 authors = ["Your Name <you@example.com>"]
 license = "Apache License"
 readme = "README.md"
+packages = [{ include = "allure_behavior_snippets" }]
+include = [{ path = "allure_behavior_snippets/process/**/*.md", format = ["sdist", "wheel"] }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -25,3 +27,6 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.scripts]
 allure-behavior-snippets = "allure_behavior_snippets.main:cli"
 allure-evidence = "allure_behavior_snippets.evidence:cli"
+touched-rules = "allure_behavior_snippets.touched_rules:main"
+evidence-pack = "allure_behavior_snippets.pack:main"
+process-path = "allure_behavior_snippets.pack:process_path_main"
