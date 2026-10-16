@@ -74,6 +74,7 @@ Writes into `--out` (a previous pack there is replaced; any other non-empty dir 
 | `touched-rules.json` / `.txt` | the touched rules and why |
 | `spec-sections.md` | each touched rule's section at head, then the spec diff |
 | `evidence.json` | the run's records for the touched rules |
+| `evidence/<RULE>.json` | the same records, one file per touched rule (what a reviewer opens) |
 | `digest.md` | `Stamp:` (head / artifact) and `Baseline:` (commit + scope) lines, then per rule: tables, Δ vs baseline, mechanical findings, hygiene pre-flags |
 | `<RULE>.md` | per touched rule: the spec table joined to its evidence, or the evidence table |
 | `baseline-evidence.json` | the baseline's records for the touched rules (with `--baseline`) |

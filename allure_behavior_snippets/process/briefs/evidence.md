@@ -18,8 +18,9 @@ row proven against nothing.
    evidence tables (case · world · status · params · attachments), `Δ vs baseline`, the mechanical
    **Findings** and the **Hygiene** pre-flags. Confirm each precomputed finding against the spec
    section; a false positive is dropped with one line saying why.
-3. `evidence.json` — the same rows as data (steps, phases, thread, attachments by file name),
-   for what the digest's cells leave open.
+3. `evidence/<RULE>.json` — one touched rule's rows as data (steps, phases, thread, attachments
+   by file name), for what the digest's cells leave open. Open the rule you are judging, never
+   the whole `evidence.json` (every touched rule's rows in one file; it can be very large).
 4. `attachments/` (and `<RULE>.md`) — open an attachment only where a row's cells leave a value
    unproven. The pack holds the touched rules' attachments; nothing else exists.
 5. `baseline-evidence.json` — the base branch's rows for the touched rules (when provided).

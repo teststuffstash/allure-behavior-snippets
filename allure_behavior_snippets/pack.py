@@ -166,6 +166,7 @@ def build(args: argparse.Namespace) -> dict:
     files: list[str] = []
 
     def write(name: str, text: str) -> None:
+        (out / name).parent.mkdir(parents=True, exist_ok=True)
         (out / name).write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
         files.append(name)
 
@@ -209,6 +210,13 @@ def build(args: argparse.Namespace) -> dict:
         scoped = _filter_rules(evidence, ids)
         records = sum(len(v) for v in scoped["rules"].values())
         write("evidence.json", json.dumps(scoped, indent=2, sort_keys=True, ensure_ascii=False))
+        # one file per touched rule: a reviewer reads ONE rule's records (steps, thread,
+        # attachments) without loading every rule's — evidence.json for a wide PR runs to six
+        # figures of tokens, and a confined reviewer has no grep to cut it
+        for rid in ids:
+            write(f"evidence/{rid}.json", json.dumps({"run": scoped.get("run", {}), "rule": rid,
+                                                     "records": scoped["rules"].get(rid, [])},
+                                                    indent=2, sort_keys=True, ensure_ascii=False))
         if baseline is not None:
             write("baseline-evidence.json",
                   json.dumps(_filter_rules(baseline, ids), indent=2, sort_keys=True, ensure_ascii=False))
