@@ -81,7 +81,13 @@ evidence are written is [CONVENTIONS.md](CONVENTIONS.md); how a reviewer judges 
     verifies nothing, and it goes stale the moment a row moves. Rows describe themselves — the
     description cell is the case, readable without the test file — and the evidence block
     (rule 5) is the only place that says what ran. A sentence that needs the word "test" to be
-    true belongs in the test's docstring, not in the spec.
+    true belongs in the test's docstring, not in the spec. Nor does the prose introduce its rows
+    ("the rows below cover …"): rows speak for themselves.
+    **A fact the prose states that no row proves is not hidden — it is marked where it stands**,
+    in plain words (`unverified — expected to behave like X`, or the index-level `🚧 WIP` /
+    `⚑ gap` of rule 10 when the whole requirement is open). The mark is the request for a row.
+    "Facts in prose have rows" is the end state, reached rule by rule as rows are written — a
+    reading discipline for authors and reviewers, not a gate.
 
 ## Contract page template
 

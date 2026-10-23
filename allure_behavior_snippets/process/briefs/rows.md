@@ -51,12 +51,12 @@ The numbers are stable IDs (`R<check>/…`). 5 (table shape) is the candidate se
 7. **Glossary — ADVISORY on new terms, BLOCKING on a redefinition.** A new term is defined in
    `glossary.md` in the same PR and listed under `Spec changes:` (rule 6). Rows use existing terms
    instead of re-explaining them. A row that uses a glossary term in a different meaning blocks.
-8. **The requirement describes the system, not its tests — BLOCKING.** A sentence in a touched
+8. **The requirement describes the system, not its tests — ADVISORY.** A sentence in a touched
    rule's prose that narrates testing ("a test row feeds …", "a second set proves …", "the
-   fixture …", "the formatter is fed …") violates rule 11: the rows and the evidence block carry
-   that, the prose carries behaviour. Quote the sentence in `Observed:`; satisfied by deleting it
-   or restating it as a behaviour the rows then key. The gate's word ratchet catches the obvious
-   words; you catch the narration that avoids them.
+   fixture …") or introduces its rows ("the rows below cover …") is rule 11's antipattern: the
+   rows and the evidence block carry that, the prose carries behaviour. Quote the sentence; the
+   author deletes it or restates it as the behaviour the rows key. Prose rules are read, not
+   counted — this never blocks on its own.
 9. **Column names are observables — ADVISORY on wording, BLOCKING on a false promise.** Every
    header cell after the description must be placeable from the requirement text alone, and it
    is a parametrize argname (CONVENTIONS § The intent column). A column named `contains` /
@@ -64,9 +64,13 @@ The numbers are stable IDs (`R<check>/…`). 5 (table shape) is the candidate se
    promises less than is proven and blocks; a column that is no parameter of its cases is the
    gate's `header-unthreaded` and the evidence brief's `HEADER_UNTHREADED`, not your finding.
 
-- **Prose claims without a row — ADVISORY.** A sentence in a rule's prose that constrains
-  behaviour but no row exercises is an unverified constraint: name it (the gate's zero-row check
-  sees whole requirements, not sentences).
+- **Prose claims without a row — ADVISORY, and the ask is a MARK, not a row.** A sentence in a
+  rule's prose that constrains behaviour but no row exercises is an unverified constraint: name
+  it, and ask for rule 11's in-place mark (`unverified — expected to …`, or the index-level
+  `🚧 WIP` / `⚑ gap`) so the reader sees what is claimed and what is proven. An enumerated claim
+  (a list of kinds, codes, cases) with rows for only some items is the common shape — say which
+  items lack a row. "Facts in prose have rows" is the end state, reached rule by rule; a claim
+  that is MARKED is in order. The gate's zero-row check sees whole requirements, not sentences.
 
 ## Table shape — CANDIDATE — under operator iteration (2026-09-29 hold); ADVISORY ONLY, never a finding
 

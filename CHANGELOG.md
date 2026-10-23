@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.2 — 2026-10-23
+
+Operator ruling after the first rule rewritten under v0.6 (homelab GW-REDACT): prose rules start
+SOFT — read, not counted — or requirements read like code.
+- RULES.md rule 11: the prose does not introduce its rows; **a fact the prose states that no row
+  proves is marked where it stands** (`unverified — expected to …`, or rule 10's index flags) —
+  the mark is the request for a row; "facts in prose have rows" is the end state, not a gate.
+- CONVENTIONS § The lint gate: item 7 (word lint on rule prose) withdrawn; § The intent column:
+  the inverse column-naming case (an observable-named column checked by containment).
+- briefs/rows.md: check 8 BLOCKING → ADVISORY; "Prose claims without a row" asks for the mark,
+  names the enumerated-claim shape.
+
 ## v0.6.1 — 2026-10-23
 
 - `HEADER_UNTHREADED` skips the `||` divider's empty header cell (v0.6.0 reported it as a column on

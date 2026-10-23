@@ -63,7 +63,9 @@ by cell.
 otherwise.** An expected column names the observable (`the line written`, `status`, `the
 answer's keys`). `contains` / `holds` / `includes` in a column name promises a substring check, so
 a test that asserts equality under such a name misstates the contract — name the column for what
-the then-step compares. One vocabulary per rule: the same observable is not "the line" in one
+the then-step compares. The inverse holds too: a column named as the observable (`log_line`) whose
+then-step checks containment promises more than is proven — name the fragment (`log_line_contains`,
+`fragment`). One vocabulary per rule: the same observable is not "the line" in one
 table and "the log" in the next. Prose never gets to explain a column; a column a reader cannot
 place from the requirement text alone is misnamed (rule 11).
 
@@ -202,10 +204,10 @@ Each repo's gate holds, at minimum:
    (a description cell no case id equals), `header-unthreaded` (a column no matched case carries
    as a parameter), `cell-mismatch` (a cell ≠ its same-named parameter), `case-unspecified` (a
    labelled case no table row names) — held by the ratchet below; a `⚑ gap` / `🚧 WIP` row is
-   rule-10 incompleteness, not an unkeyed row;
-7. a rule's prose names no tests (rule 11): the words *test*, *tests*, *tested*, *pytest*,
-   *fixture*, *parametrize*, *docstring* outside code spans, held by the same ratchet (the
-   reviewer's rows brief catches the narration that avoids the words).
+   rule-10 incompleteness, not an unkeyed row.
+
+Rule 11 (prose describes the system, unproven facts are marked) is deliberately NOT a gate item:
+prose rules are read, not counted — a word lint makes requirements read like code.
 
 Report-shape debt (attachments outside steps, steps with no evidence, over-long descriptions) and
 the join counts above are held by **ratchets** against a committed baseline — exceeding fails,
