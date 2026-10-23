@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.1 — 2026-10-23
+
+- `HEADER_UNTHREADED` skips the `||` divider's empty header cell (v0.6.0 reported it as a column on
+  every decision table that uses the divider).
+
 ## v0.6.0 — 2026-10-23
 
 The first rule walked end to end on the gateway island (a redaction rule, 13 rows) joined 0 cells:

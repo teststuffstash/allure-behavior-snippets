@@ -888,7 +888,7 @@ def spec_findings(rule, tables, records):
         matched = [j["record"] for j in joined if j["record"] is not None]
         if matched:
             for name in header[1:]:
-                if not any(name in rec["params"] for rec in matched):
+                if name and not any(name in rec["params"] for rec in matched):  # '' = the `||` divider cell
                     out.append(f"- HEADER_UNTHREADED {rule} `{name}`: no case of this table carries a "
                                f"parameter of that name — its cells compare to nothing")
     for r in unspecified:
