@@ -869,18 +869,28 @@ def render_joined(tables, records, run, report_url=None):
 
 
 def spec_findings(rule, tables, records):
-    """ROW_UNPROVEN / CELL_MISMATCH / ROW_UNSPECIFIED lines for the digest."""
+    """ROW_UNPROVEN / ROW_UNKEYED / CELL_MISMATCH / HEADER_UNTHREADED / ROW_UNSPECIFIED lines for
+    the digest (CONVENTIONS § The intent column: the header is the parameter list)."""
     per_table, unspecified, _ = join_rule(tables, records)
     out = []
-    for _, joined in per_table:
+    for header, joined in per_table:
         for j in joined:
             desc = j["cells"][0] if j["cells"] else ""
             if j["record"] is None:
                 out.append(f"- ROW_UNPROVEN {rule} {cell(desc)}: spec row has no evidence case "
                            f"(neither exact nor substring matched)")
+            elif j["kind"] == "substring":
+                out.append(f"- ROW_UNKEYED {rule} {cell(desc)}: joined only by substring to case "
+                           f"`{j['record']['case']}` — the description cell must equal the case id")
             for name, spec_cell, actual in j["mismatches"]:
                 out.append(f"- CELL_MISMATCH {rule} {cell(desc)}: {name} spec {cell(spec_cell)} "
                            f"⇢ actual {cell(actual)}")
+        matched = [j["record"] for j in joined if j["record"] is not None]
+        if matched:
+            for name in header[1:]:
+                if not any(name in rec["params"] for rec in matched):
+                    out.append(f"- HEADER_UNTHREADED {rule} `{name}`: no case of this table carries a "
+                               f"parameter of that name — its cells compare to nothing")
     for r in unspecified:
         out.append(f"- ROW_UNSPECIFIED {rule} {r['case']}: evidence row matches no TABLE row "
                    f"(a ruling in section prose does not join)")

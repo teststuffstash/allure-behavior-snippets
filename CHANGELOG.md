@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.6.0 — 2026-10-23
+
+The first rule walked end to end on the gateway island (a redaction rule, 13 rows) joined 0 cells:
+its header named no parameter, its prose narrated its tests, and nothing in the process said either
+was wrong.
+- RULES.md **rule 11**: the requirement describes the system, never its tests.
+- CONVENTIONS § The intent column: **the header is the parameter list** (description cell == id
+  verbatim, other columns == argnames, cells == values); **columns are named by what is observed**,
+  equality unless the name says otherwise. § The lint gate: items 6 (the exact-join counts, a
+  ratchet) and 7 (no test words in rule prose).
+- briefs/rows.md: checks 8 (prose narrates no tests — blocking) and 9 (column names are observables).
+- briefs/evidence.md + `allure-evidence`: `ROW_UNKEYED` (substring join) and `HEADER_UNTHREADED`
+  (a column no case carries) computed into the digest; `ROW_UNSPECIFIED` named in the code table.
+
 ## v0.5.2 — 2026-10-16
 
 The spec join found NO tables on the first island that used the decision-table shape (homelab

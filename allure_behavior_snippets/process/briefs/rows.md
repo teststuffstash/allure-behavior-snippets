@@ -51,6 +51,18 @@ The numbers are stable IDs (`R<check>/…`). 5 (table shape) is the candidate se
 7. **Glossary — ADVISORY on new terms, BLOCKING on a redefinition.** A new term is defined in
    `glossary.md` in the same PR and listed under `Spec changes:` (rule 6). Rows use existing terms
    instead of re-explaining them. A row that uses a glossary term in a different meaning blocks.
+8. **The requirement describes the system, not its tests — BLOCKING.** A sentence in a touched
+   rule's prose that narrates testing ("a test row feeds …", "a second set proves …", "the
+   fixture …", "the formatter is fed …") violates rule 11: the rows and the evidence block carry
+   that, the prose carries behaviour. Quote the sentence in `Observed:`; satisfied by deleting it
+   or restating it as a behaviour the rows then key. The gate's word ratchet catches the obvious
+   words; you catch the narration that avoids them.
+9. **Column names are observables — ADVISORY on wording, BLOCKING on a false promise.** Every
+   header cell after the description must be placeable from the requirement text alone, and it
+   is a parametrize argname (CONVENTIONS § The intent column). A column named `contains` /
+   `holds` / `includes` whose cases assert equality (the digest's then-step reads `= <value>`)
+   promises less than is proven and blocks; a column that is no parameter of its cases is the
+   gate's `header-unthreaded` and the evidence brief's `HEADER_UNTHREADED`, not your finding.
 
 - **Prose claims without a row — ADVISORY.** A sentence in a rule's prose that constrains
   behaviour but no row exercises is an unverified constraint: name it (the gate's zero-row check

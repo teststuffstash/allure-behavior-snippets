@@ -51,6 +51,9 @@ codes.
 |---|---|---|
 | `NO_EVIDENCE` | zero evidence rows for the rule | mechanical |
 | `ROW_UNPROVEN` | a spec-table row added / changed in the diff has no evidence case matching it — exact match on the row's description cell first, then case-insensitive substring; **state which** matched or that neither did | mechanical + confirm |
+| `ROW_UNKEYED` | a spec-table row the join reaches only by substring — the description cell is not the case id verbatim (CONVENTIONS § The intent column); the row renders but is not keyed, so a cell compare cannot be trusted | mechanical |
+| `HEADER_UNTHREADED` | a header column (after the description) that no matched case of the table carries as a parameter — its cells compare to nothing, so every expected value under it is unproven | mechanical |
+| `ROW_UNSPECIFIED` | a rule-labelled case whose id equals no description cell of the rule's tables — evidence the spec does not claim (a row ruled in prose, a case the author never tabled) | mechanical |
 | `BARE_ROW` | an evidence row with no params and no attachments, on a rule whose spec table has value columns (inputs / expected) | mechanical |
 | `FAILED` | any evidence row for the rule is `failed` / `broken` | mechanical |
 | `VANISHED` | a case present in the baseline is absent now, the spec diff carries no ~~tombstone~~ / strike for it, AND the case lies inside the baseline's stated scope (the `Baseline:` line; the digest classifies removed cases as relabelled / out-of-scope / unlabelled / gone — only `gone` can be VANISHED) | mechanical + confirm |

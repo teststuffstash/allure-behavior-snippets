@@ -21,9 +21,9 @@ def test_all_docs_ship():
         assert (P / d).is_file(), d
 
 
-def test_rules_numbered_1_to_10():
+def test_rules_numbered_1_to_11():
     nums = [int(m) for m in re.findall(r"^(\d+)\. \*\*", read("RULES.md").split("## Rules", 1)[1], re.M)]
-    assert nums[:10] == list(range(1, 11))
+    assert nums[:11] == list(range(1, 12))
 
 
 @pytest.mark.parametrize("doc", DOCS)
@@ -61,14 +61,15 @@ def test_hygiene_codes_defined_once_in_conventions():
 
 def test_evidence_brief_predicate_codes():
     ev = read("briefs/evidence.md")
-    for c in ("NO_EVIDENCE", "ROW_UNPROVEN", "BARE_ROW", "FAILED", "VANISHED", "UNIT_ONLY", "WORLD_UNNAMED"):
+    for c in ("NO_EVIDENCE", "ROW_UNPROVEN", "ROW_UNKEYED", "HEADER_UNTHREADED", "ROW_UNSPECIFIED", "BARE_ROW",
+              "FAILED", "VANISHED", "UNIT_ONLY", "WORLD_UNNAMED"):
         assert f"| `{c}` |" in ev, c
     assert "HYGIENE_REPEAT" in ev and "three worst" in ev
 
 
 def test_rows_brief_checks_and_candidate_shape():
     rows = read("briefs/rows.md")
-    for n in (1, 2, 3, 4, 7):
+    for n in (1, 2, 3, 4, 7, 8, 9):
         assert re.search(rf"^{n}\. \*\*", rows, re.M), n
     assert "## Table shape — CANDIDATE — under operator iteration (2026-09-29 hold); ADVISORY ONLY, never a finding" in rows
     assert "Prose claims without a row" in rows
