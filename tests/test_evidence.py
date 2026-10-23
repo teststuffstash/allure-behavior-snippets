@@ -466,10 +466,10 @@ UNTHREADED_PAGE = """# page
 
 ### ING-RT-UNTHREADED
 
-| description | the formatter is given | the line written |
-|---|---|---|
-| a token in a message | `auth ok TOKEN` | `auth ok <redacted>` |
-| a plain line | `hello` | `hello` |
+| description | the formatter is given || the line written |
+|---|---||---|
+| a token in a message | `auth ok TOKEN` || `auth ok <redacted>` |
+| a plain line | `hello` || `hello` |
 """
 
 
@@ -487,6 +487,7 @@ def test_header_no_case_carries_is_unthreaded_in_the_digest(tmp_path):
     assert f"- HEADER_UNTHREADED {rule} `the formatter is given`: no case of this table carries a parameter of that name" in digest
     assert f"- HEADER_UNTHREADED {rule} `the line written`: no case of this table carries a parameter of that name" in digest
     assert f"CELL_MISMATCH {rule}" not in digest and f"ROW_UNKEYED {rule}" not in digest  # keyed exactly, compared to nothing
+    assert f"- HEADER_UNTHREADED {rule} ``:" not in digest  # the `||` divider's empty cell is not a column
 
 
 def test_spec_rule_with_no_records_is_all_unproven(tmp_path):
