@@ -74,6 +74,14 @@ evidence are written is [CONVENTIONS.md](CONVENTIONS.md); how a reviewer judges 
     - For issue writers: a spec states *verified facts and intent*; anything inferred or
       unverified is marked (⚖ / 🚧 / "verify during implementation") — a spec that looks complete
       but is not strands the worker at the first gap.
+11. **The requirement describes the system, never its tests.** The prose above a table states
+    what the system does and why, in the system's own nouns (the line written, the answer, the
+    row stored); it never narrates how the rows are produced or what "a test" does. "A test row
+    feeds each pattern through X; a second set proves Y" is the antipattern: the sentence
+    verifies nothing, and it goes stale the moment a row moves. Rows describe themselves — the
+    description cell is the case, readable without the test file — and the evidence block
+    (rule 5) is the only place that says what ran. A sentence that needs the word "test" to be
+    true belongs in the test's docstring, not in the spec.
 
 ## Contract page template
 

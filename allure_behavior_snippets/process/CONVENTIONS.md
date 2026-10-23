@@ -48,6 +48,25 @@ parametrization aggregates to counts only.** When a rule accretes more than ~8 c
 the rule (rule 2), do not grow the table. An evidence-labelled parametrized test with
 auto-generated ids is an input restatement by construction — the lint gate refuses it.
 
+**The header is the parameter list.** A decision table's description cell is the `pytest.param`
+id **verbatim** (`⚖` included — the flag is part of the intent); every other header cell is a
+parametrize argname verbatim, and each cell is the value that parameter takes in that case (a
+legend above the table decodes short literals; the test decodes against the same legend). That
+equality is what lets the join compare a cell to the recorded parameter and mark `spec ⇢ actual`,
+and what lets a reader match a report row to a spec row without the source open. A header column
+no case carries as a parameter is **unthreaded**; a description cell the join reaches only by
+substring is **unkeyed** — both are lint (§ The lint gate), never tolerance. Inputs a world
+already describes are named by the world (a `world` column holding its name), never restated cell
+by cell.
+
+**Columns are named by what is observed, and the comparison is equality unless the name says
+otherwise.** An expected column names the observable (`the line written`, `status`, `the
+answer's keys`). `contains` / `holds` / `includes` in a column name promises a substring check, so
+a test that asserts equality under such a name misstates the contract — name the column for what
+the then-step compares. One vocabulary per rule: the same observable is not "the line" in one
+table and "the log" in the next. Prose never gets to explain a column; a column a reader cannot
+place from the requirement text alone is misnamed (rule 11).
+
 ## Evidence row identity = (rule ID, world, case)
 
 Expected behaviour is a function of (system, **world**) — an example row that does not name its
@@ -178,11 +197,19 @@ Each repo's gate holds, at minimum:
 2. every rule heading has an evidence block **or** the explicit unverified marker;
 3. every link and `#anchor` in the built site resolves;
 4. every evidence-labelled parametrized test carries explicit intent ids;
-5. on a page with an index table, every rule section is a row of it.
+5. on a page with an index table, every rule section is a row of it;
+6. the spec ⇄ test join is exact (§ The intent column): per rule, four counts — `row-unkeyed`
+   (a description cell no case id equals), `header-unthreaded` (a column no matched case carries
+   as a parameter), `cell-mismatch` (a cell ≠ its same-named parameter), `case-unspecified` (a
+   labelled case no table row names) — held by the ratchet below; a `⚑ gap` / `🚧 WIP` row is
+   rule-10 incompleteness, not an unkeyed row;
+7. a rule's prose names no tests (rule 11): the words *test*, *tests*, *tested*, *pytest*,
+   *fixture*, *parametrize*, *docstring* outside code spans, held by the same ratchet (the
+   reviewer's rows brief catches the narration that avoids the words).
 
-Report-shape debt (attachments outside steps, steps with no evidence, over-long descriptions) is
-held by **ratchets** against a committed per-module baseline — exceeding fails, equal or lower
-passes; never a big-bang gate.
+Report-shape debt (attachments outside steps, steps with no evidence, over-long descriptions) and
+the join counts above are held by **ratchets** against a committed baseline — exceeding fails,
+equal or lower passes, the fixing PR lowers the line; never a big-bang gate.
 
 ## Issue acceptance — rows run at HEAD
 

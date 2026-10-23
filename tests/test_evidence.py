@@ -456,6 +456,37 @@ def test_joined_fragment_is_the_spec_table_in_spec_order(tmp_path):
     assert f"- CELL_MISMATCH {JOIN} mismatch row: parsed_from spec `[A, B]` ⇢ actual '[A]'" in digest
     assert f"- ROW_UNSPECIFIED {JOIN} an unspecified door: evidence row matches no TABLE row (a ruling in section prose does not join)" in digest
     assert f"- FAILED {JOIN} substring row ⚖" in digest
+    # v0.6.0: a substring join is not a key; this table's every column IS some case's parameter
+    assert (f"- ROW_UNKEYED {JOIN} substring row ⚖ (a long parenthetical the case does not carry): joined only by "
+            f"substring to case `substring row ⚖` — the description cell must equal the case id") in digest
+    assert f"HEADER_UNTHREADED {JOIN}" not in digest
+
+
+UNTHREADED_PAGE = """# page
+
+### ING-RT-UNTHREADED
+
+| description | the formatter is given | the line written |
+|---|---|---|
+| a token in a message | `auth ok TOKEN` | `auth ok <redacted>` |
+| a plain line | `hello` | `hello` |
+"""
+
+
+def test_header_no_case_carries_is_unthreaded_in_the_digest(tmp_path):
+    rule = "ING-RT-UNTHREADED"
+    results = [
+        _result("test_u[a token in a message]", "tests.test_u#test_u", "passed", story=rule,
+                params={"line": "'auth ok TOKEN'", "out": "'auth ok <redacted>'"}),
+        _result("test_u[a plain line]", "tests.test_u#test_u", "passed", story=rule,
+                params={"line": "'hello'", "out": "'hello'"}),
+    ]
+    ev = evidence.build_evidence(results)
+    evidence.write_outputs(ev, tmp_path, rules=[rule], spec={rule: evidence.spec_tables(UNTHREADED_PAGE, rule)})
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert f"- HEADER_UNTHREADED {rule} `the formatter is given`: no case of this table carries a parameter of that name" in digest
+    assert f"- HEADER_UNTHREADED {rule} `the line written`: no case of this table carries a parameter of that name" in digest
+    assert f"CELL_MISMATCH {rule}" not in digest and f"ROW_UNKEYED {rule}" not in digest  # keyed exactly, compared to nothing
 
 
 def test_spec_rule_with_no_records_is_all_unproven(tmp_path):
