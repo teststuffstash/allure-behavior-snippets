@@ -12,7 +12,7 @@ RUN poetry export -f requirements.txt --with=dev > requirements.txt
 
 # Tag must match the exact playwright pin in pyproject.toml — the browsers
 # baked into this image only work with the same playwright package version.
-FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
+FROM mcr.microsoft.com/playwright/python:v1.64.1-noble
 
 ENV TZ=UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
