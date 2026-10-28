@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.6.3 — 2026-10-28
+
+Operator's structural spot check of the first migrated oracle page (oracle-fleet #925, comment
+6476449506): expected-output columns were indistinguishable from inputs once a table grew past a
+few columns, and `||` leaves an empty column in ordinary Markdown.
+- CONVENTIONS § The intent column, "Expected columns": **inputs first, expected outputs last, an
+  expected column's header ends in `?`** (`title?`) and is the argname `expected_title` in pytest;
+  the role is kept in the joined row. `||` stays accepted for pages that already use it.
+- `allure-evidence`: the join looks a `name?` column up as `expected_name` (`param_name()`,
+  `column_role()`); `HEADER_UNTHREADED` names the pytest argname when it differs; every joined row
+  carries `roles`.
+- RULES.md page skeleton and briefs/rows.md: a row must read with its description hidden — the
+  input cells distinguish the case, the description says why it matters, the prose states the
+  rule (CONVENTIONS § The intent column, "Rows read without their description").
+
 ## v0.6.2 — 2026-10-23
 
 Operator ruling after the first rule rewritten under v0.6 (homelab GW-REDACT): prose rules start
