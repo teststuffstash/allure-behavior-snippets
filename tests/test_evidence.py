@@ -490,6 +490,59 @@ def test_header_no_case_carries_is_unthreaded_in_the_digest(tmp_path):
     assert f"- HEADER_UNTHREADED {rule} ``:" not in digest  # the `||` divider's empty cell is not a column
 
 
+EXPECTED_PAGE = """# page
+
+### ING-RT-EXPECTED
+
+| description | meta_title | body_heading | title? |
+|---|---|---|---|
+| metadata takes precedence | `A` | `C` | `A` |
+| body heading is never an act title | `absent` | `C` | `""` |
+"""
+
+
+def test_expected_column_joins_under_the_expected_prefix(tmp_path):
+    """v0.6.3: `title?` in the header is `expected_title` in pytest — joined, compared, never
+    unthreaded; the role rides the joined row; a mismatch names the column as authored."""
+    rule = "ING-RT-EXPECTED"
+    results = [
+        _result("test_t[metadata takes precedence]", "tests.test_t#test_t", "passed", story=rule,
+                params={"meta_title": "'A'", "body_heading": "'C'", "expected_title": "'A'"}),
+        _result("test_t[body heading is never an act title]", "tests.test_t#test_t", "passed", story=rule,
+                params={"meta_title": "'absent'", "body_heading": "'C'", "expected_title": "'C'"}),
+    ]
+    assert evidence.param_name("title?") == "expected_title"
+    assert evidence.param_name("title") == "title" and evidence.param_name("") == ""
+    assert evidence.column_role("title?") == "expected" and evidence.column_role("title") == "input"
+    tables = evidence.spec_tables(EXPECTED_PAGE, rule)
+    ev = evidence.build_evidence(results)
+    per_table, _, stats = evidence.join_rule(tables, ev["rules"][rule])
+    (header, joined), = per_table
+    assert header == ["description", "meta_title", "body_heading", "title?"]  # as authored
+    assert joined[0]["roles"] == ["input", "input", "input", "expected"]
+    assert joined[0]["mismatches"] == [] and stats["mismatch_cells"] == 1
+    assert joined[1]["mismatches"] == [("title?", '`""`', "'C'")]
+    evidence.write_outputs(ev, tmp_path, rules=[rule], spec={rule: tables})
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert f"HEADER_UNTHREADED {rule}" not in digest
+    assert f"- CELL_MISMATCH {rule} body heading is never an act title: title? spec" in digest
+    md = (tmp_path / f"{rule}.md").read_text(encoding="utf-8")
+    assert md.splitlines()[0] == "| status | description | meta_title | body_heading | title? | attachments | test | threads |"
+
+
+def test_expected_column_without_the_prefix_in_pytest_is_unthreaded(tmp_path):
+    rule = "ING-RT-EXPECTED"
+    results = [
+        _result("test_t[metadata takes precedence]", "tests.test_t#test_t", "passed", story=rule,
+                params={"meta_title": "'A'", "body_heading": "'C'", "title": "'A'"}),
+    ]
+    ev = evidence.build_evidence(results)
+    evidence.write_outputs(ev, tmp_path, rules=[rule], spec={rule: evidence.spec_tables(EXPECTED_PAGE, rule)})
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert (f"- HEADER_UNTHREADED {rule} `title?` (`expected_title` in pytest): no case of this table "
+            f"carries a parameter of that name") in digest
+
+
 def test_spec_rule_with_no_records_is_all_unproven(tmp_path):
     ev = evidence.build_evidence(_join_results())
     spec = {"NEXT-RULE": evidence.spec_tables(SPEC_PAGE, "NEXT-RULE")}

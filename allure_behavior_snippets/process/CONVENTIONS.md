@@ -59,6 +59,23 @@ substring is **unkeyed** — both are lint (§ The lint gate), never tolerance. 
 already describes are named by the world (a `world` column holding its name), never restated cell
 by cell.
 
+**Expected columns end in `?`** (v0.6.3): inputs first, expected outputs last, and every expected
+column's header carries a trailing `?` — `title?`, `rc?`, `events_include?` — which is the
+parametrize argname `expected_title` / `expected_rc` / `expected_events_include` in pytest (the
+join maps the one to the other and keeps the role in the joined row). Outputs are errors, events
+and side effects as much as return values. The `description` column is neither: it is the
+row's intent, explanatory metadata. The older `||` divider between inputs and outputs is still
+read, but it renders as an empty column in ordinary Markdown; a page that migrates drops it.
+
+**Rows read without their description.** The input and expected cells alone must distinguish the
+case; the description says why the case matters; the requirement prose states the general rule.
+A table shaped `description | body_text?` fails this — hiding the description leaves outcomes
+without the conditions that produce them — so the input that varies between rows is a column
+(`meta_title`, `body_heading`), never only words in the description. A world can supply the
+inputs (`world` column), but a fixture name alone is not a distinguishing condition when two rows
+of the same world differ. The reviewer's first pass reads the table this way (briefs/rows.md
+check 10).
+
 **Columns are named by what is observed, and the comparison is equality unless the name says
 otherwise.** An expected column names the observable (`the line written`, `status`, `the
 answer's keys`). `contains` / `holds` / `includes` in a column name promises a substring check, so
@@ -202,7 +219,7 @@ Each repo's gate holds, at minimum:
 5. on a page with an index table, every rule section is a row of it;
 6. the spec ⇄ test join is exact (§ The intent column): per rule, four counts — `row-unkeyed`
    (a description cell no case id equals), `header-unthreaded` (a column no matched case carries
-   as a parameter), `cell-mismatch` (a cell ≠ its same-named parameter), `case-unspecified` (a
+   as a parameter — a `name?` column under `expected_name`), `cell-mismatch` (a cell ≠ its same-named parameter), `case-unspecified` (a
    labelled case no table row names) — held by the ratchet below; a `⚑ gap` / `🚧 WIP` row is
    rule-10 incompleteness, not an unkeyed row.
 

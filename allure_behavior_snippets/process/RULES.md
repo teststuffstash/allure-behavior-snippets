@@ -104,7 +104,7 @@ schema: <name>.schema.json      # the sibling machine half — rule 7
 
 ## <PREFIX>-<REQ>
 <prose constraint>
-<decision table: description | inputs || expected>
+<decision table: description | inputs… | expected?… — expected columns end in `?`>
 <details markdown="1"><summary>Evidence — latest run</summary> --8<-- "<PREFIX>-<REQ>.md" </details>
 ```
 

@@ -64,6 +64,17 @@ The numbers are stable IDs (`R<check>/…`). 5 (table shape) is the candidate se
    promises less than is proven and blocks; a column that is no parameter of its cases is the
    gate's `header-unthreaded` and the evidence brief's `HEADER_UNTHREADED`, not your finding.
 
+10. **Rows read with their descriptions hidden — BLOCKING when a condition lives only in the
+    description.** Read each touched table once with the description column covered: do the
+    input cells and the expected (`name?`) cells distinguish every row, and does each expected
+    cell follow from the requirement prose over those inputs? Record what is missing instead of
+    guessing it, then uncover the descriptions and check that each one claims only what its
+    cells and evidence show. A description that supplies an input the cells do not carry ("empty
+    metadata falls through" over a row whose `meta_title` column is absent) is the finding; the
+    reveal does not repair it. Inputs a `world` column names are explicit; a fixture name alone
+    is not when two rows of the same world differ (CONVENTIONS § The intent column, "Rows read
+    without their description").
+
 - **Prose claims without a row — ADVISORY, and the ask is a MARK, not a row.** A sentence in a
   rule's prose that constrains behaviour but no row exercises is an unverified constraint: name
   it, and ask for rule 11's in-place mark (`unverified — expected to …`, or the index-level

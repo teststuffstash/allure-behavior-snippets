@@ -652,6 +652,26 @@ def _section_ends(level, rule_level, text):
     return level <= rule_level or bool(_RULE_HEADING.match(text))
 STATUS_UNPROVEN = "∅"
 STATUS_MISMATCH = "≠"
+# v0.6.3: an expected-output column ends in `?` in the spec header (`title?`) and is the
+# parametrize argname `expected_title` in the test — inputs first, expected outputs last, the role
+# kept in the joined row (CONVENTIONS § The intent column, "Expected columns").
+EXPECTED_MARK = "?"
+EXPECTED_PREFIX = "expected_"
+
+
+def column_role(header_cell):
+    """``expected`` when the header cell ends in `?`, else ``input`` (the description column and
+    the `||` divider's empty cell read as ``input`` — they carry no parameter)."""
+    return "expected" if (header_cell or "").rstrip().endswith(EXPECTED_MARK) else "input"
+
+
+def param_name(header_cell):
+    """The parametrize argname a header cell maps to: ``title?`` → ``expected_title``; any other
+    cell is the argname verbatim."""
+    h = (header_cell or "").strip()
+    if h.endswith(EXPECTED_MARK):
+        return EXPECTED_PREFIX + h[:-len(EXPECTED_MARK)].rstrip()
+    return h
 SUBSTRING_MARK = "~"   # appended to the status of a row whose description matched loosely
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 
@@ -764,16 +784,17 @@ def join_table(header, rows, records):
         matched += recs
         if not recs:
             joined.append({"status": STATUS_UNPROVEN, "cells": list(row), "spec": list(row),
-                           "record": None,
+                           "record": None, "roles": [column_role(h) for h in header],
                            "kind": kind, "mismatches": [], "unthreaded": []})
             continue
         rec = _worst(recs)
         cells, mismatches = [desc], []
         for name, spec_cell in zip(header[1:], row[1:]):
-            if name in rec["params"]:
-                actual = rec["params"][name]
+            pname = param_name(name)
+            if pname in rec["params"]:
+                actual = rec["params"][pname]
                 if norm_cell(spec_cell) == norm_cell(actual):
-                    cells.append(f"**{spec_cell}**" if is_threaded(rec, name) else spec_cell)
+                    cells.append(f"**{spec_cell}**" if is_threaded(rec, pname) else spec_cell)
                 else:
                     mismatches.append((name, spec_cell, actual))
                     cells.append(f"{spec_cell} ⇢ {cell(actual)}")
@@ -786,10 +807,10 @@ def join_table(header, rows, records):
             status = STATUS_MISMATCH
         if kind == "substring":
             status += SUBSTRING_MARK
-        unthreaded = [name for name in header[1:]
-                      if name in rec["params"] and not is_threaded(rec, name)]
+        unthreaded = [param_name(name) for name in header[1:]
+                      if param_name(name) in rec["params"] and not is_threaded(rec, param_name(name))]
         joined.append({"status": status, "cells": cells, "spec": list(row), "record": rec,
-                       "kind": kind,
+                       "kind": kind, "roles": [column_role(h) for h in header],
                        "mismatches": mismatches, "unthreaded": unthreaded})
     return joined, matched, stats
 
@@ -888,8 +909,10 @@ def spec_findings(rule, tables, records):
         matched = [j["record"] for j in joined if j["record"] is not None]
         if matched:
             for name in header[1:]:
-                if name and not any(name in rec["params"] for rec in matched):  # '' = the `||` divider cell
-                    out.append(f"- HEADER_UNTHREADED {rule} `{name}`: no case of this table carries a "
+                pname = param_name(name)
+                if name and not any(pname in rec["params"] for rec in matched):  # '' = the `||` divider cell
+                    as_param = f" (`{pname}` in pytest)" if pname != name else ""
+                    out.append(f"- HEADER_UNTHREADED {rule} `{name}`{as_param}: no case of this table carries a "
                                f"parameter of that name — its cells compare to nothing")
     for r in unspecified:
         out.append(f"- ROW_UNSPECIFIED {rule} {r['case']}: evidence row matches no TABLE row "
