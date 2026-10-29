@@ -116,6 +116,82 @@ def test_full_pack(repo, tmp_path, capsys):
     assert m["counts"]["records_in_run"] == 3 and m["counts"]["attachments"] == 1
     assert m["inputs"] == {"prior_review": True, "issue_intent": True, "pr_body": True}
     assert "manifest.json" not in m["files"] and "digest.md" in m["files"]
+    assert m["masked"] is None and not (out / "row-keys.tsv").exists()
+
+
+def test_mask_descriptions_writes_the_first_pass_surface(repo, tmp_path, capsys):
+    # the PR also touches the page's SECOND table (API-ORDERS-LIMIT), so its keys must read r2.*
+    page = (repo.root / "specs/endpoints/orders.md").read_text()
+    repo.write("specs/endpoints/orders.md", page.replace("| over the limit | 101 || 429 |",
+                                                           "| over the limit | 101 || 429 |\n| at the limit | 100 || 201 |"))
+    repo.head = repo.commit("pr2")
+    res = write_results(tmp_path / "results", [_result("one item"), _result("zero items fall through"),
+                                               _result("over the limit", story="API-ORDERS-LIMIT")], commit=repo.head)
+    baseline = {"run": {"files": ["tests.test_orders"]},
+                "rules": {"API-ORDERS-CREATE": [{"case": "one item", "status": "failed"},
+                                                {"case": "zero items", "status": "passed"}]}}
+    (tmp_path / "base.json").write_text(json.dumps(baseline))
+    out = tmp_path / "pack"
+    assert run(repo, res, out, "--mask-descriptions", "--baseline", str(tmp_path / "base.json")) == 0
+    assert "masked: 4 + row-keys.tsv" in capsys.readouterr().out
+
+    masked = (out / "spec-sections-masked.md").read_text()
+    full = (out / "spec-sections.md").read_text()
+    assert "| row | qty || status |" in masked and "| description |" not in masked
+    assert "| r1.1 | 1 || 201 |" in masked and "| r1.2 | 0 || 422 |" in masked
+    assert "| r2.1 | 101 || 429 |" in masked and "| r2.2 | 100 || 201 |" in masked   # page ordinal, not section ordinal
+    for desc in ("one item", "zero items", "over the limit", "at the limit"):
+        assert desc not in masked and desc in full
+    assert "Creates an order." in masked and "Uses the [quota]" in masked              # prose, headings in view
+    assert "# Spec diff" not in masked and "spec diff: not in the masked surface" in masked
+    assert "# Spec diff" in full
+    assert (out / "row-keys.tsv").read_text() == ("# specs/endpoints/orders.md\n"
+                                                  "r1.1\tone item\nr1.2\tzero items\n"
+                                                  "r2.1\tover the limit\nr2.2\tat the limit\n")
+
+    # the twins: the same join, every case keyed like its spec row; substring joins read exact
+    create = (out / "API-ORDERS-CREATE.masked.md").read_text()
+    assert create.startswith("| status | row | qty |")
+    assert "| ✓ | r1.1 | 1 |" in create and "| ≠ | r1.2 | 0 ⇢ 1 |" in create
+    assert "zero items" not in create and "one item" not in create
+    assert "| ≠~ | zero items |" in (out / "API-ORDERS-CREATE.md").read_text()
+    limit = (out / "API-ORDERS-LIMIT.masked.md").read_text()
+    assert "| ≠ | r2.1 | 101 ⇢ 1 |" in limit and "| ∅ | r2.2 |" in limit and "over the limit" not in limit
+    digest = (out / "digest.masked.md").read_text()
+    assert "| ✓ | r1.1 |" in digest and "| ✓ | r1.2 |" in digest and "| ✓ | r2.1 |" in digest  # digest = the run's table
+    assert "- CELL_MISMATCH API-ORDERS-CREATE r1.2: qty spec 0 ⇢ actual 1" in digest
+    assert "- ROW_UNPROVEN API-ORDERS-LIMIT r2.2:" in digest
+    assert "- flips:\n  - r1.1: failed → passed" in digest                 # baseline cases keyed too
+    assert "zero items" not in digest and "one item" not in digest
+    assert "ROW_UNKEYED" not in digest and "ROW_UNKEYED" in (out / "digest.md").read_text()
+    assert "**Stamp:**" in digest and "`baseline-evidence.json`" in digest
+    # unmasked surfaces keep the descriptions
+    assert "one item" in (out / "tree" / "specs" / "endpoints" / "orders.md").read_text()
+    assert "one item" in (out / "evidence" / "API-ORDERS-CREATE.json").read_text()
+
+    m = json.loads((out / "manifest.json").read_text())
+    assert m["masked"]["files"] == ["API-ORDERS-CREATE.masked.md", "API-ORDERS-LIMIT.masked.md",
+                                    "digest.masked.md", "spec-sections-masked.md"]
+    assert m["masked"]["keys"] == "row-keys.tsv" and m["masked"]["tree"] == "unmasked"
+    assert "tree/" in m["masked"]["unmasked"] and "evidence/" in m["masked"]["unmasked"]
+    assert {"spec-sections-masked.md", "row-keys.tsv", "digest.masked.md"} <= set(m["files"])
+
+    # a rerun without the flag clears the masked surface (row-keys.tsv included)
+    assert run(repo, res, out, "--no-specs-tree") == 0
+    assert not (out / "row-keys.tsv").exists() and not (out / "digest.masked.md").exists()
+    assert json.loads((out / "manifest.json").read_text())["masked"] is None
+
+
+def test_mask_descriptions_on_an_empty_pack(tmp_path):
+    repo = base_repo(tmp_path / "repo")
+    repo.write("README.md", "changed\n")
+    repo.commit()
+    out = tmp_path / "pack"
+    assert run(repo, write_results(tmp_path / "results", []), out, "--no-specs-tree", "--mask-descriptions") == 0
+    assert "no touched rules" in (out / "spec-sections-masked.md").read_text()
+    assert (out / "row-keys.tsv").read_text().strip() == ""
+    assert "nothing to review" in (out / "digest.masked.md").read_text()
+    assert json.loads((out / "manifest.json").read_text())["masked"]["files"] == ["digest.masked.md", "spec-sections-masked.md"]
 
 
 def test_no_touched_rule_writes_an_empty_pack(tmp_path):

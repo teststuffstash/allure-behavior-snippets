@@ -16,6 +16,11 @@ Read intent before evidence; never read implementation code; the inputs dir is t
   spec diff. `touched-rules.json` lists the rules; a `page-preamble` source means the page's
   preamble or index changed, so every rule on it is in scope; `glossary` means the glossary
   changed under rules that link it.
+- `spec-sections-masked.md` — the same sections with every description cell a row key
+  `r<table>.<row>` (header `row`), no diff; `row-keys.tsv` maps the keys back; `digest.masked.md`
+  and `<RULE>.masked.md` are the evidence surfaces keyed the same way. Pass 1 of check 10 reads
+  these and nothing with a description in it (not `tree/`, not `evidence/`). Absent when the pack
+  was built without `--mask-descriptions`: then check 10 is one read with the column covered.
 - `tree/<specs-root>/` — the specs at head: neighbouring pages, `glossary.md`, the sibling
   `*.schema.json`, `use-cases/`, `worlds/`. Read a neighbour when a touched row references it
   (an alias anchor, a glossary term, a cited use case).
@@ -65,14 +70,19 @@ The numbers are stable IDs (`R<check>/…`). 5 (table shape) is the candidate se
    gate's `header-unthreaded` and the evidence brief's `HEADER_UNTHREADED`, not your finding.
 
 10. **Rows read with their descriptions hidden — BLOCKING when a condition lives only in the
-    description.** Read each touched table once with the description column covered: do the
-    input cells and the expected (`name?`) cells distinguish every row, and does each expected
-    cell follow from the requirement prose over those inputs? Record what is missing instead of
-    guessing it, then uncover the descriptions and check that each one claims only what its
-    cells and evidence show. A description that supplies an input the cells do not carry ("empty
-    metadata falls through" over a row whose `meta_title` column is absent) is the finding; the
-    reveal does not repair it. Inputs a `world` column names are explicit; a fixture name alone
-    is not when two rows of the same world differ (CONVENTIONS § The intent column, "Rows read
+    description.** Two passes, one review. Pass 1 reads the masked surface only
+    (`spec-sections-masked.md`, `digest.masked.md`, `<RULE>.masked.md`: every description cell a
+    row key `r<table>.<row>`): do the input cells and the expected (`name?`) cells distinguish
+    every row, and does each expected cell follow from the requirement prose over those inputs?
+    Record what is missing instead of guessing it, one finding per row key; pass 1's findings are
+    frozen before the reveal. Pass 2 reads the full surface (`spec-sections.md`, `row-keys.tsv`
+    joins the keys back) and marks each pass-1 finding `survives` / `contradicted` (the cells or
+    evidence show otherwise) / `withdrawn` (pass 1 misread the cells), then checks that each
+    description claims only what its cells and evidence show. A finding pass 2 can explain from
+    the description is NOT repaired by it: a description that supplies an input the cells do not
+    carry ("empty metadata falls through" over a row whose `meta_title` column is absent) is the
+    finding, and it survives. Inputs a `world` column names are explicit; a fixture name alone is
+    not when two rows of the same world differ (CONVENTIONS § The intent column, "Rows read
     without their description").
 
 - **Prose claims without a row — ADVISORY, and the ask is a MARK, not a row.** A sentence in a

@@ -727,6 +727,50 @@ def spec_tables(text, rule):
     return tables
 
 
+DESCRIPTION_HEADER = "description"
+MASKED_HEADER = "row"
+
+
+def _with_first_cell(line, text):
+    """``line`` (a GFM row) with its first cell's text replaced; the rest byte-identical."""
+    start = line.find("|") + 1
+    end = start
+    while end < len(line) and not (line[end] == "|" and line[end - 1] != "\\"):
+        end += 1
+    return f"{line[:start]} {text} {line[end:]}"
+
+
+def mask_page(text):
+    """The page with every decision table's description column rewritten to a neutral row key
+    ``r<t>.<r>`` — ``t`` the table's ordinal among the PAGE's decision tables (first header cell
+    ``description``), ``r`` the row's — and the header cell ``description`` → ``row``; every other
+    byte as authored. Numbering runs over the whole page, so a key is stable between the two
+    passes of a staged read and across rounds at one head. Returns ``(masked_text, keymap)`` with
+    ``keymap`` = ``[(key, description)]`` in page order."""
+    lines = text.split("\n")
+    out, keymap, t, i = [], [], 0, 0
+    while i < len(lines):
+        line = lines[i]
+        if line.lstrip().startswith("|") and i + 1 < len(lines) and _TABLE_SEP.match(lines[i + 1]):
+            header = _split_row(line)
+            if header and header[0] == DESCRIPTION_HEADER:
+                t += 1
+                out += [_with_first_cell(line, MASKED_HEADER), lines[i + 1]]
+                i += 2
+                r = 0
+                while i < len(lines) and lines[i].lstrip().startswith("|"):
+                    r += 1
+                    key = f"r{t}.{r}"
+                    cells = _split_row(lines[i])
+                    keymap.append((key, cells[0] if cells else ""))
+                    out.append(_with_first_cell(lines[i], key))
+                    i += 1
+                continue
+        out.append(line)
+        i += 1
+    return "\n".join(out), keymap
+
+
 def norm_cell(value):
     """Comparison form of a spec cell or a param value: backticks gone, one pair of
     surrounding quotes gone, whitespace collapsed. ``None`` → ''."""

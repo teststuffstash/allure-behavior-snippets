@@ -23,6 +23,9 @@ row proven against nothing.
    the whole `evidence.json` (every touched rule's rows in one file; it can be very large).
 4. `attachments/` (and `<RULE>.md`) — open an attachment only where a row's cells leave a value
    unproven. The pack holds the touched rules' attachments; nothing else exists.
+   `digest.masked.md` / `<RULE>.masked.md`, when present, are 2 and this with the case column
+   keyed `r<table>.<row>` — the rows brief's pass-1 surface (check 10), not a second evidence
+   read; a case no spec row claims keeps its id there.
 5. `baseline-evidence.json` — the base branch's rows for the touched rules (when provided).
 6. `prior-review.md` — the previous review: its finding IDs and `Hygiene notes:` are your only
    memory.

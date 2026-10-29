@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.6.4 — 2026-10-29
+
+The first staged specs review (oracle-fleet #925 spot-check item 5 → #946) read a masked copy of
+the page first: 105 tables · 65 fine without descriptions · 43 structural findings (41 survive the
+reveal) · 25 new intent findings — a class nine ordinary rounds had passed. The masking was a
+seat-local script; the pack had no masked surface (#39).
+- `evidence-pack --mask-descriptions`: `spec-sections-masked.md` beside `spec-sections.md` — the
+  same sections, every decision table's `description` cell → row key `r<table>.<row>`, the header
+  cell → `row`, every other byte as authored; `row-keys.tsv` (`key<TAB>description`, grouped
+  under a `# <page>` line). Tables number over the WHOLE page, not the touched sections, so a key
+  is stable between the two passes and across rounds at one head. The spec diff is not in the
+  masked file (its rows carry descriptions) — a comment says so.
+- The description-derived evidence surfaces get masked twins **beside the originals**:
+  `digest.masked.md` and `<RULE>.masked.md`, the case column keyed like the spec row it joins
+  (exact or substring). Beside, not a `masked/` dir: pass 1 still reads `process/`, the round
+  inputs and `manifest.json` from the top level, so a subdir would scope nothing, and pass 2
+  opens the twin by name. A case no spec row claims keeps its pytest id (nothing keys it); a
+  substring join reads exact in the twin (`ROW_UNKEYED` and the `~` mark are description-level —
+  the full surface's). `tree/`, `evidence/`, `evidence.json`, `attachments/` stay unmasked;
+  `manifest.json` `masked` lists the masked files, the key map and what stays unmasked.
+- `allure-evidence`: `mask_page()` (the masking, `evidence.py`).
+- CONVENTIONS "Rows read without their description" names the masked surface; briefs/rows.md
+  check 10 is the two-pass shape — pass 1 on the masked surface, its findings frozen; pass 2 on
+  the full one, each pass-1 finding `survives` / `contradicted` / `withdrawn`; a finding pass 2
+  explains is NOT repaired. briefs/evidence.md lists the twins among its inputs.
+
 ## v0.6.3 — 2026-10-28
 
 Operator's structural spot check of the first migrated oracle page (oracle-fleet #925, comment

@@ -73,8 +73,10 @@ A table shaped `description | body_text?` fails this — hiding the description 
 without the conditions that produce them — so the input that varies between rows is a column
 (`meta_title`, `body_heading`), never only words in the description. A world can supply the
 inputs (`world` column), but a fixture name alone is not a distinguishing condition when two rows
-of the same world differ. The reviewer's first pass reads the table this way (briefs/rows.md
-check 10).
+of the same world differ. The reviewer's first pass reads the table this way, from the pack's
+masked surface (`evidence-pack --mask-descriptions`): `spec-sections-masked.md` and the
+`digest.masked.md` / `<RULE>.masked.md` twins, every description cell a row key `r<table>.<row>`
+numbered over the whole page, `row-keys.tsv` joining the keys back (briefs/rows.md check 10).
 
 **Columns are named by what is observed, and the comparison is equality unless the name says
 otherwise.** An expected column names the observable (`the line written`, `status`, `the
