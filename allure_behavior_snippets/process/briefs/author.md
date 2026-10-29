@@ -8,8 +8,7 @@ rows): your repo's process page — RULES.md § Adopting this process in a repo.
 ## Read before writing
 - The page end to end: schema, use cases, world(s), `glossary.md` — rules 6, 7, 8, § Evidence row identity.
 - The neighbouring rows of the table you change — rows.md § Table shape.
-- The row's intent source: an `## Acceptance` bullet, a use case, the prose constraint, an
-  `External:` clause — rule 1, rows.md check 1.
+- The intent source — `## Acceptance`, a use case, the prose constraint, `External:` — rule 1, check 1.
 
 ## A row
 - Header = the parameter list, inputs first; expected columns end in `?`, `name?` is the argname
@@ -17,7 +16,8 @@ rows): your repo's process page — RULES.md § Adopting this process in a repo.
 - Description cell = intent, never the inputs restated; `⚖` on a judgment row — rule 4.
 - Rows must read with the description hidden — the reviewer reads them masked first; fixture-supplied
   inputs go in a `world` column — § The intent column, rows.md check 10.
-- ≲8 curated rows per rule; past that, split the requirement and alias the old anchor — rules 2, 3.
+- ≲8 curated rows per rule is a review signal; split by distinct behaviour, never by count, and
+  preserve the old anchor — rules 2, 3; rows.md § Table shape.
 
 ## The prose above the table
 - It describes the system, never its tests or its rows — rule 11.
