@@ -96,14 +96,37 @@ def test_every_brief_states_the_ground_rules(brief):
     assert "the inputs dir is the only world" in text
 
 
-def test_author_brief_points_and_does_not_restate():
-    """The worker-facing brief cites rules by number and the reviewer's briefs by name; it holds no
-    second definition (no code table, no numbered checks) and no repo fact."""
+def test_author_brief_is_a_checklist_of_pointers():
+    """The worker-facing brief is a checklist, not a second document: at most 40 lines, every bullet
+    at most two lines and pointing at a rule number, a section (§) or a check number, every § naming a
+    real heading of the file it points at; no code table, no numbered checks, no dates, no repo fact."""
     author = read("briefs/author.md")
+    lines = author.splitlines()
     assert author.startswith("# Author brief")
-    for name in ("rows.md", "evidence.md", "finding-contract.md", "../RULES.md", "../CONVENTIONS.md"):
+    assert len(lines) <= 40, len(lines)
+    for name in ("../RULES.md", "../CONVENTIONS.md", "rows.md"):
         assert f"]({name})" in author, name
-    assert len(set(re.findall(r"\(rules? (\d+)", author))) >= 8  # cites most of RULES.md by number
+    bullets, cur = [], None
+    for line in lines:
+        if line.startswith("- "):
+            cur = [line]
+            bullets.append(cur)
+        elif line.startswith("  ") and cur is not None:
+            cur.append(line)
+        else:
+            cur = None
+    assert len(bullets) >= 12
+    for b in bullets:
+        text = " ".join(b)
+        assert len(b) <= 2, text
+        assert re.search(r"\brules? \d|§ |\bcheck \d", text), text
+    cited = {n for group in re.findall(r"\brules? ((?:\d+(?:, )?)+)", author) for n in group.split(", ")}
+    assert len(cited) >= 8, cited  # cites most of RULES.md by number ("rules 6, 7, 8" counts three)
+    headings = {d: re.findall(r"^#+ (.+)$", read(d), re.M) for d in DOCS}
+    files = {"RULES.md": "RULES.md", "rows.md": "briefs/rows.md", "finding-contract.md": "briefs/finding-contract.md"}
+    for m in re.finditer(r"(?:(RULES\.md|rows\.md|finding-contract\.md) )?§ ([^,.;()\n—]+)", author):
+        target, name = files.get(m.group(1), "CONVENTIONS.md"), m.group(2).strip()
+        assert any(h.startswith(name) for h in headings[target]), (name, target)
     for phrase in ("Spec changes:", "⚖", "⚑ gap", "🚧 WIP", "Satisfied by:", "check 10",
                    "§ Adopting this process in a repo"):
         assert phrase in author, phrase

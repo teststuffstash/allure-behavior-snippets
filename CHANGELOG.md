@@ -3,18 +3,19 @@
 ## v0.6.6 — 2026-10-29
 
 Row authors had no page of their own: workers were pointed at the reviewer's checks (briefs/rows.md
-check 10) and recipes restated rule content, which drifts.
-- **`briefs/author.md` — the author brief**: the one page a row author reads before touching a
-  specs page. When it applies; read before writing (the page, its worlds, the glossary, the
-  neighbouring rows, the intent source); a row's shape (the header is the parameter list, the
-  description is intent, rows read with the description hidden, `≲8` curated rows, the `world`
-  column); the prose describes the system and marks unproven facts (rule 11); tests prove rows
-  (`pytest.param` id == description cell, the spec gate and lint gate before the PR); the PR body
-  (`Spec changes:`, ⚖, `⚑ gap`, never a row adjusted to observed behaviour unflagged); what the
-  reviewer does with it (one review, derived finding IDs, fix in the same PR). It points — "rule N"
-  and CONVENTIONS sections by name — and restates nothing; repo facts stay on the repo's own
-  process page (RULES.md § Adopting this process in a repo).
-- Ships with the wheel, the context pack's `process/` and the process artifact image like the
+check 10) and recipes restated rule content, which drifts. Every worker ride that touches specs pays
+the page in tokens, so it is a checklist, not a second document.
+- **`briefs/author.md` — the author's checklist**: one page, ≤40 lines, pointers only. Each bullet
+  is an imperative plus where the rule lives ("rule N", a CONVENTIONS `§`, a rows.md check) and
+  restates no mechanism: when it applies, read before writing, a row (header = parameter list,
+  description = intent, rows read with the description hidden, ≲8 curated rows), the prose (rule 11
+  + the mark), tests (id == description cell, argnames == header, `rule()` + `world`, the gates
+  before the PR), the PR body (`Spec changes:`, ⚖, `⚑ gap`, no unflagged adjustment to observed
+  behaviour), the review (fix per `Satisfied by:` in the same PR; a ⚖ disagreement is a new ⚖
+  row). Repo facts stay on the repo's process page (RULES.md § Adopting this process in a repo).
+- `tests/test_process_docs.py` holds the shape: the line cap, every bullet ≤2 lines and citing a
+  rule / `§` / check, every `§` resolving to a heading of the file it names, no tables, no numbered
+  checks, no dates. Ships with the wheel, the pack's `process/` and the artifact image like the
   other briefs. Rules, conventions, the reviewer briefs, tools and flags are unchanged.
 
 ## v0.6.5 — 2026-10-29
