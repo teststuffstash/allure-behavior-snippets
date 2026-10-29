@@ -111,3 +111,78 @@ jobs:
         # This step uses the identity token to provision an ephemeral certificate
         # against the sigstore community Fulcio instance.
         run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+
+  # The process artifact image — Dockerfile target `process`, published beside the tool image as
+  # ghcr.io/<repo>-process with the SAME tag set and cosign signature, on the same triggers. Its
+  # root filesystem is /process/ (RULES.md, CONVENTIONS.md, briefs/*.md, VERSION) for a Kubernetes
+  # image volume mounted read-only in agent worker pods. A separate job so a failure here never
+  # touches the tool image's publish.
+  process:
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 #v4.1.2
+        with:
+          cosign-release: 'v3.1.4'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The artifact must hold EVERY file under allure_behavior_snippets/process/ plus VERSION, and
+      # VERSION must be the pyproject version (and the tag, when this is a tag push). Export the
+      # target's root filesystem as a tar and diff its listing against the source dir.
+      - name: Check the process rootfs against the source dir
+        run: |
+          docker buildx build --target process --output type=tar,dest=process.tar .
+          tar -tf process.tar | sed 's#^\./##' | grep '^process/' | grep -v '/$' | sort > actual.txt
+          { (cd allure_behavior_snippets && find process -type f); echo process/VERSION; } | sort > expected.txt
+          diff -u expected.txt actual.txt
+          echo "rootfs holds $(wc -l < actual.txt) files:"; cat actual.txt
+          version="$(tar -xOf process.tar process/VERSION)"
+          pyproject="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["tool"]["poetry"]["version"])')"
+          echo "VERSION=${version} pyproject=${pyproject} ref=${GITHUB_REF_NAME}"
+          test "${version}" = "${pyproject}"
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then test "v${version}" = "${GITHUB_REF_NAME}"; fi
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-process
+
+      - name: Build and push the process image
+        id: build-and-push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: process
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=process
+          cache-to: type=gha,mode=max,scope=process
+
+      - name: Sign the published process image
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}

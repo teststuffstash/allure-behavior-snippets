@@ -41,6 +41,23 @@ process, or the process does not work (homelab ADR-156). It ships as package dat
 A repo adopts by pinning the wheel and turning its own process page into a pointer here plus its
 repo facts (specs root, ID prefix, worlds, gate commands, who gates spec rows).
 
+### The process as files — the artifact image (v0.6.5)
+
+`ghcr.io/teststuffstash/allure-behavior-snippets-process:v<version>` is a `FROM scratch` image whose
+root filesystem is exactly the pinned process text — for a pod that reads the process as files
+without installing the tool (a Kubernetes [image volume](https://kubernetes.io/docs/concepts/storage/volumes/#image),
+mounted read-only):
+
+```
+/process/RULES.md
+/process/CONVENTIONS.md
+/process/briefs/{rows,evidence,finding-contract}.md
+/process/VERSION          # the package version, == the image tag without its `v`
+```
+
+It is published by the same tag push as the tool image (Dockerfile target `process`, workflow job
+`process`), signed the same way, and CI diffs its listing against `allure_behavior_snippets/process/`.
+
 ### `touched-rules`
 
 ```

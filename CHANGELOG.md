@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.6.5 — 2026-10-29
+
+Agent worker pods read the pinned process as files. Until now the only published form of
+`process/` was the python wheel / the tool image, where the text sits under the venv's
+site-packages — nothing a pod could mount without running the tool.
+- **The process artifact image** `ghcr.io/teststuffstash/allure-behavior-snippets-process:<tag>`:
+  a `FROM scratch` image (Dockerfile target `process`) whose root filesystem is exactly
+  `/process/RULES.md`, `/process/CONVENTIONS.md`, `/process/briefs/*.md` and `/process/VERSION`
+  (the package version, derived from `pyproject.toml` at build — one source). Meant for a
+  Kubernetes image volume (`pod.spec.volumes[].image`) mounted read-only; same tag set and
+  cosign signature as the tool image, published by the same `v*.*.*` tag push (workflow job
+  `process`). The tool image is unchanged.
+- The `process` job diffs the built rootfs listing against `allure_behavior_snippets/process/`
+  (a brief added later cannot be left out silently) and, on a tag push, refuses to publish when
+  `VERSION` ≠ the tag.
+- Process text, tools and flags are unchanged — v0.6.4's briefs ship as-is.
+
 ## v0.6.4 — 2026-10-29
 
 The first staged specs review (oracle-fleet #925 spot-check item 5 → #946) read a masked copy of
