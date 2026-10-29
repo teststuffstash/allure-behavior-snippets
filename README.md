@@ -37,6 +37,9 @@ process, or the process does not work (homelab ADR-156). It ships as package dat
 - [`briefs/finding-contract.md`](allure_behavior_snippets/process/briefs/finding-contract.md) —
   what both briefs share: derived finding IDs, the fields a worker fixes from, reconciliation,
   round tracking, the one combined verdict and the review's output shape.
+- [`briefs/author.md`](allure_behavior_snippets/process/briefs/author.md) — the worker-facing
+  brief: what a row author reads before touching a specs page (row shape, prose, tests, the PR
+  body, what the reviewer does with it) — pointers into the rules, conventions and briefs above.
 
 A repo adopts by pinning the wheel and turning its own process page into a pointer here plus its
 repo facts (specs root, ID prefix, worlds, gate commands, who gates spec rows).
@@ -51,7 +54,7 @@ mounted read-only):
 ```
 /process/RULES.md
 /process/CONVENTIONS.md
-/process/briefs/{rows,evidence,finding-contract}.md
+/process/briefs/{rows,evidence,finding-contract,author}.md
 /process/VERSION          # the package version, == the image tag without its `v`
 ```
 

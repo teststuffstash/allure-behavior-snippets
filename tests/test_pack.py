@@ -103,7 +103,8 @@ def test_full_pack(repo, tmp_path, capsys):
     assert (out / "prior-review.md").read_text().startswith("## Specs review")
     assert "zero items is 422" in (out / "issue-intent.md").read_text()
     assert "Spec changes:" in (out / "pr-body.md").read_text()
-    for f in ("RULES.md", "CONVENTIONS.md", "briefs/rows.md", "briefs/evidence.md", "briefs/finding-contract.md"):
+    for f in ("RULES.md", "CONVENTIONS.md", "briefs/rows.md", "briefs/evidence.md", "briefs/finding-contract.md",
+              "briefs/author.md"):
         assert (out / "process" / f).is_file(), f
     assert not list((out / "process").rglob("*.py"))
 

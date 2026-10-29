@@ -9,7 +9,8 @@ import allure_behavior_snippets
 from allure_behavior_snippets.pack import process_dir
 
 P = process_dir()
-DOCS = ["RULES.md", "CONVENTIONS.md", "briefs/rows.md", "briefs/evidence.md", "briefs/finding-contract.md"]
+DOCS = ["RULES.md", "CONVENTIONS.md", "briefs/rows.md", "briefs/evidence.md", "briefs/finding-contract.md",
+        "briefs/author.md"]
 
 
 def read(name):
@@ -43,7 +44,8 @@ def test_conventions_sections_the_briefs_pin_by_name():
                     "## The head/artifact stamp"):
         assert section in conv, section
     headings = re.findall(r"^## (.+)$", conv, re.M)
-    refs = [ref.strip() for brief in ("briefs/rows.md", "briefs/evidence.md", "briefs/finding-contract.md")
+    refs = [ref.strip() for brief in ("briefs/rows.md", "briefs/evidence.md", "briefs/finding-contract.md",
+                                      "briefs/author.md")
             for ref in re.findall(r"CONVENTIONS\.md\]\([^)]*\)\s+§ ([^,.\n();]+)", read(brief))]
     assert len(refs) >= 3
     for ref in refs:
@@ -92,6 +94,22 @@ def test_every_brief_states_the_ground_rules(brief):
     assert "intent before evidence" in text
     assert "never read implementation code" in text
     assert "the inputs dir is the only world" in text
+
+
+def test_author_brief_points_and_does_not_restate():
+    """The worker-facing brief cites rules by number and the reviewer's briefs by name; it holds no
+    second definition (no code table, no numbered checks) and no repo fact."""
+    author = read("briefs/author.md")
+    assert author.startswith("# Author brief")
+    for name in ("rows.md", "evidence.md", "finding-contract.md", "../RULES.md", "../CONVENTIONS.md"):
+        assert f"]({name})" in author, name
+    assert len(set(re.findall(r"\(rules? (\d+)", author))) >= 8  # cites most of RULES.md by number
+    for phrase in ("Spec changes:", "⚖", "⚑ gap", "🚧 WIP", "Satisfied by:", "check 10",
+                   "§ Adopting this process in a repo"):
+        assert phrase in author, phrase
+    assert not re.search(r"^\| `[A-Z_]+` \|", author, re.M), "a code table belongs in CONVENTIONS / evidence.md"
+    assert not re.search(r"^\d+\. \*\*", author, re.M), "numbered checks are the rows brief's"
+    assert not re.search(r"\b20\d\d-\d\d-\d\d\b", author), "no dates — the CHANGELOG carries history"
 
 
 def test_finding_contract():

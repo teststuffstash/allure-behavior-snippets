@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.6.6 — 2026-10-29
+
+Row authors had no page of their own: workers were pointed at the reviewer's checks (briefs/rows.md
+check 10) and recipes restated rule content, which drifts.
+- **`briefs/author.md` — the author brief**: the one page a row author reads before touching a
+  specs page. When it applies; read before writing (the page, its worlds, the glossary, the
+  neighbouring rows, the intent source); a row's shape (the header is the parameter list, the
+  description is intent, rows read with the description hidden, `≲8` curated rows, the `world`
+  column); the prose describes the system and marks unproven facts (rule 11); tests prove rows
+  (`pytest.param` id == description cell, the spec gate and lint gate before the PR); the PR body
+  (`Spec changes:`, ⚖, `⚑ gap`, never a row adjusted to observed behaviour unflagged); what the
+  reviewer does with it (one review, derived finding IDs, fix in the same PR). It points — "rule N"
+  and CONVENTIONS sections by name — and restates nothing; repo facts stay on the repo's own
+  process page (RULES.md § Adopting this process in a repo).
+- Ships with the wheel, the context pack's `process/` and the process artifact image like the
+  other briefs. Rules, conventions, the reviewer briefs, tools and flags are unchanged.
+
 ## v0.6.5 — 2026-10-29
 
 Agent worker pods read the pinned process as files. Until now the only published form of
