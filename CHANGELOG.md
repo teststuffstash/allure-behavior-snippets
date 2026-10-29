@@ -9,8 +9,8 @@ the page in tokens, so it is a checklist, not a second document.
   is an imperative plus where the rule lives ("rule N", a CONVENTIONS `§`, a rows.md check) and
   restates no mechanism: when it applies, read before writing, a row (header = parameter list,
   description = intent, rows read with the description hidden, ≲8 curated rows), the prose (rule 11
-  + the mark), tests (id == description cell, argnames == header, `rule()` + `world`, the gates
-  before the PR), the PR body (`Spec changes:`, ⚖, `⚑ gap`, no unflagged adjustment to observed
+  + the mark), tests (id == description cell, argnames == header, `name?` ⇄ `expected_name`, `rule()` +
+  `world`, the report shape, the gates before the PR), the PR body (`Spec changes:`, ⚖, `⚑ gap`, no unflagged adjustment to observed
   behaviour), the review (fix per `Satisfied by:` in the same PR; a ⚖ disagreement is a new ⚖
   row). Repo facts stay on the repo's process page (RULES.md § Adopting this process in a repo).
 - `tests/test_process_docs.py` holds the shape: the line cap, every bullet ≤2 lines and citing a
