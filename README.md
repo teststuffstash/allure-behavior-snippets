@@ -64,7 +64,7 @@ evidence-pack BASE HEAD RESULTS [--out evidence-review] [--repo DIR] [--specs-ro
               [--tests-root DIR ...] [--code-root DIR ...] [--id-regex RE]
               [--baseline evidence.json [--baseline-commit SHA] [--baseline-scope TEXT]]
               [--prior-review FILE] [--issue-intent FILE] [--pr-body FILE]
-              [--report-url URL] [--no-specs-tree]
+              [--report-url URL] [--no-specs-tree] [--mask-descriptions]
 ```
 
 Writes into `--out` (a previous pack there is replaced; any other non-empty dir is refused):
@@ -82,7 +82,17 @@ Writes into `--out` (a previous pack there is replaced; any other non-empty dir 
 | `prior-review.md`, `issue-intent.md`, `pr-body.md` | the round inputs, or a stated "none / not provided" line |
 | `tree/<specs-root>/` | the specs at head (neighbouring pages, glossary, schemas, worlds) |
 | `process/` | `RULES.md`, `CONVENTIONS.md`, `briefs/` — the process the review runs under |
-| `manifest.json` | tool version, base / head, layout, stamp, baseline, counts, inputs, files |
+| `manifest.json` | tool version, base / head, layout, stamp, baseline, counts, inputs, files, `masked` |
+
+With `--mask-descriptions` (the staged read's first pass, briefs/rows.md check 10) it also writes:
+
+| File | What it is |
+|---|---|
+| `spec-sections-masked.md` | the same sections, every decision table's `description` cell → row key `r<table>.<row>` (numbered over the whole page), the header cell → `row`; no spec diff |
+| `row-keys.tsv` | `key<TAB>description`, grouped under a `# <page>` line |
+| `digest.masked.md`, `<RULE>.masked.md` | the digest and per-rule tables with the case column keyed the same way |
+
+`tree/`, `evidence/`, `evidence.json` and `attachments/` stay unmasked; `manifest.json` `masked` lists what is.
 
 When no rule is touched it exits 0 with the empty forms of these files. Exit 64 on bad input.
 

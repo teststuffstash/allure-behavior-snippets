@@ -4,12 +4,18 @@
         [--tests-root DIR ...] [--code-root DIR ...] [--id-regex RE]
         [--baseline evidence.json [--baseline-commit SHA] [--baseline-scope TEXT]]
         [--prior-review FILE] [--issue-intent FILE] [--pr-body FILE]
-        [--report-url URL] [--no-specs-tree]
+        [--report-url URL] [--no-specs-tree] [--mask-descriptions]
 
 oracle-fleet ``scripts/evidence-review.sh``'s contract in Python, plus the round inputs of
 homelab ADR-156. A confined reviewer reads ONLY this dir: the briefs and rules it judges by are
 copied in (``process/``) at the version this tool was pinned at, so the process a review ran
 under is the process in its inputs.
+
+``--mask-descriptions`` adds the staged read's first-pass surface (briefs/rows.md check 10):
+``spec-sections-masked.md`` (every decision table's description cell → row key ``r<t>.<r>``,
+numbered over the whole page), ``row-keys.tsv`` (key → description), and the masked twins
+``digest.masked.md`` + ``<RULE>.masked.md`` (the case column keyed the same way). ``tree/``,
+``evidence/`` and the attachments stay unmasked; ``manifest.json`` lists the masked files.
 
 ``process-path`` prints the installed ``process/`` dir (the briefs, RULES.md, CONVENTIONS.md).
 stdlib only.
@@ -29,7 +35,7 @@ from . import evidence as ev
 from . import touched_rules as tr
 
 PROCESS_DIR = Path(__file__).resolve().parent / "process"
-TOP_LEVEL_SUFFIXES = (".md", ".json", ".txt")
+TOP_LEVEL_SUFFIXES = (".md", ".json", ".txt", ".tsv")
 PACK_DIRS = ("process", "tree", "attachments")
 
 NONE_TEXT = {
@@ -80,7 +86,10 @@ def _show_bytes(git: tr.Git, rev: str, path: str) -> bytes | None:
 
 
 def spec_sections(rows: list[dict], head_specs: dict[str, str], layout: tr.Layout,
-                  base: str, head: str, spec_diff: str) -> str:
+                  base: str, head: str, spec_diff: str | None) -> str:
+    """Each touched rule's section from ``head_specs`` (the pages at head — or their masked
+    copies), then the spec diff; ``spec_diff=None`` states its absence (the masked surface: a
+    diff's rows carry descriptions and cannot be keyed)."""
     out: list[str] = []
     ids = tr.unique_ids(rows)
     if not ids:
@@ -100,8 +109,58 @@ def spec_sections(rows: list[dict], head_specs: dict[str, str], layout: tr.Layou
         out.append(body if body is not None else
                    f"_section not found at {head[:12]} (heading removed? see the spec diff)_")
         out.append("")
-    out += ["# Spec diff", "", "```diff", spec_diff.rstrip("\n"), "```", ""]
+    if spec_diff is None:
+        out += ["<!-- spec diff: not in the masked surface (its rows carry descriptions) — "
+                "spec-sections.md holds it -->", ""]
+    else:
+        out += ["# Spec diff", "", "```diff", spec_diff.rstrip("\n"), "```", ""]
     return "\n".join(out)
+
+
+def row_keys_tsv(keymaps: dict[str, list[tuple[str, str]]], used: dict[str, set[str]]) -> str:
+    """``row-keys.tsv``: ``key<TAB>description`` for every key the masked sections show, grouped
+    under a ``# <page path>`` line per page (keys number per page, so the page disambiguates)."""
+    out: list[str] = []
+    for path in sorted(keymaps):
+        lines = [f"{k}\t{d}" for k, d in keymaps[path] if k in used.get(path, set())]
+        if lines:
+            out += [f"# {path}", *lines]
+    return "\n".join(out) + ("\n" if out else "")
+
+
+def case_keys(spec: dict[str, list], masked_spec: dict[str, list], evidence: dict) -> dict[tuple[str, str], str]:
+    """``(rule, case) → row key`` for every description cell and every record a spec row joins
+    (exact or substring), so the masked evidence surfaces key a case the way the page does."""
+    keys: dict[tuple[str, str], str] = {}
+    for rid, tables in spec.items():
+        recs = evidence.get("rules", {}).get(rid, [])
+        for (_, rows), (_, mrows) in zip(tables, masked_spec.get(rid, [])):
+            for row, mrow in zip(rows, mrows):
+                if not row or not mrow or row[0] == mrow[0]:
+                    continue  # not a decision table: nothing was keyed
+                keys[(rid, row[0])] = mrow[0]
+                for r in ev.match_case(row[0], recs)[1]:
+                    keys[(rid, r["case"])] = mrow[0]
+    return keys
+
+
+def mask_records(evidence: dict | None, keys: dict[tuple[str, str], str]) -> dict | None:
+    """A copy of ``evidence`` with each record's ``case`` keyed by ``keys`` (a case no spec row
+    claims keeps its pytest id — there is no key to show)."""
+    if evidence is None:
+        return None
+    rules = {rid: [{**r, "case": keys.get((rid, r["case"]), r["case"])} for r in recs]
+             for rid, recs in evidence.get("rules", {}).items()}
+    return {**evidence, "rules": rules}
+
+
+def _rule_lines(tables: list | None, recs: list, run: dict, report_url: str | None, rid: str) -> list[str]:
+    """``<RULE>.md``: the spec table joined to its evidence, else the evidence table."""
+    if ev.rule_joins(tables, recs) or (tables and not recs):
+        return ev.render_joined(tables, recs, run, report_url)
+    if recs:
+        return ev.render_table(recs, run, report_url)
+    return [f"_no evidence rows for {rid}_"]
 
 
 def stamp_of(run: dict, head: str) -> dict:
@@ -179,6 +238,25 @@ def build(args: argparse.Namespace) -> dict:
     head_specs = tr.head_spec_pages(git, head, layout)
     diff_args = ["diff", f"{base}...{head}"] + (["--", layout.specs_root] if layout.specs_root != "." else [])
     write("spec-sections.md", spec_sections(rows, head_specs, layout, base, head, git(*diff_args)))
+    # 2b. the masked surface (--mask-descriptions): the same sections with every description
+    #     cell a row key numbered over the whole page, the key map, no diff
+    masked_specs: dict[str, str] = {}
+    masked_files: list[str] = []
+    if args.mask_descriptions:
+        keymaps: dict[str, list[tuple[str, str]]] = {}
+        used: dict[str, set[str]] = {}
+        for path in sorted({r["path"] for r in rows if r["path"]}):
+            text = head_specs.get(path)
+            if text is None:
+                continue
+            masked_specs[path], keymaps[path] = ev.mask_page(text)
+            keyset = {k for k, _ in keymaps[path]}
+            for rid in {r["rule"] for r in rows if r["path"] == path}:
+                for _, trows in ev.spec_tables(masked_specs[path], rid):
+                    used.setdefault(path, set()).update(t[0] for t in trows if t and t[0] in keyset)
+        write("spec-sections-masked.md", spec_sections(rows, masked_specs, layout, base, head, None))
+        write("row-keys.tsv", row_keys_tsv(keymaps, used))
+        masked_files += ["spec-sections-masked.md"]
 
     # 3. evidence for the touched rules (the digest reads the WHOLE run, so a case that moved
     #    to another rule is classified relabelled, not vanished; the files carry touched rules)
@@ -192,11 +270,14 @@ def build(args: argparse.Namespace) -> dict:
         write("evidence.json", json.dumps({"run": {}, "rules": {}}, indent=2))
         write("digest.md", f"# Evidence digest\n\n_No touched rules between {base[:12]} and "
                            f"{head[:12]} — nothing to review._")
+        if args.mask_descriptions:
+            write("digest.masked.md", (out / "digest.md").read_text(encoding="utf-8"))
+            masked_files.append("digest.masked.md")
     else:
         dirs = [str(results)]
         evidence = ev.build_evidence(ev.load_results(dirs), ev.load_environment(dirs), results_dirs=dirs)
         stamp = stamp_of(evidence["run"], head)
-        spec = {}
+        spec, masked_spec = {}, {}
         for path in sorted({r["path"] for r in rows if r["path"]}):
             on_page = [r["rule"] for r in rows if r["path"] == path]
             text = head_specs.get(path)
@@ -206,6 +287,8 @@ def build(args: argparse.Namespace) -> dict:
                 tables = ev.spec_tables(text, rid)
                 if tables:
                     spec[rid] = tables
+                    if path in masked_specs:
+                        masked_spec[rid] = ev.spec_tables(masked_specs[path], rid)
         records_total = sum(len(v) for v in evidence["rules"].values())
         scoped = _filter_rules(evidence, ids)
         records = sum(len(v) for v in scoped["rules"].values())
@@ -231,14 +314,20 @@ def build(args: argparse.Namespace) -> dict:
         digest = ev.render_digest(ids, evidence, baseline, args.report_url, spec)
         write("digest.md", "\n".join(head_lines + digest))
         for rid in ids:
-            recs = evidence["rules"].get(rid, [])
-            if ev.rule_joins(spec.get(rid), recs) or (spec.get(rid) and not recs):
-                lines = ev.render_joined(spec[rid], recs, evidence["run"], args.report_url)
-            elif recs:
-                lines = ev.render_table(recs, evidence["run"], args.report_url)
-            else:
-                lines = [f"_no evidence rows for {rid}_"]
-            write(f"{rid}.md", "\n".join(lines))
+            write(f"{rid}.md", "\n".join(_rule_lines(spec.get(rid), evidence["rules"].get(rid, []),
+                                                     evidence["run"], args.report_url, rid)))
+        if args.mask_descriptions:
+            # the masked twins: the same join, every case keyed like its spec row (a substring
+            # join reads exact here — ROW_UNKEYED is a description-level finding, pass 2's)
+            keys = case_keys(spec, masked_spec, evidence)
+            m_ev, m_base = mask_records(evidence, keys), mask_records(baseline, keys)
+            write("digest.masked.md", "\n".join(
+                head_lines + ev.render_digest(ids, m_ev, m_base, args.report_url, masked_spec)))
+            masked_files.append("digest.masked.md")
+            for rid in ids:
+                write(f"{rid}.masked.md", "\n".join(_rule_lines(
+                    masked_spec.get(rid), m_ev["rules"].get(rid, []), m_ev["run"], args.report_url, rid)))
+                masked_files.append(f"{rid}.masked.md")
         # attachments of the touched rules' records, so the pack is the reviewer's whole world
         for recs in scoped["rules"].values():
             for src in {s for r in recs for s in (r.get("attachment_files") or {}).values() if s}:
@@ -292,6 +381,10 @@ def build(args: argparse.Namespace) -> dict:
         "inputs": {"prior_review": prior is not None, "issue_intent": intent is not None,
                    "pr_body": body is not None},
         "files": sorted(files),
+        "masked": ({"files": sorted(masked_files), "keys": "row-keys.tsv", "tree": "unmasked",
+                    "unmasked": ["spec-sections.md", "digest.md", "<RULE>.md", "evidence.json",
+                                 "evidence/", "baseline-evidence.json", "attachments/", "tree/"]}
+                   if args.mask_descriptions else None),
         "process": "process/",
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -321,6 +414,10 @@ def cli(argv: list[str] | None = None) -> int:
     ap.add_argument("--report-url", default=None, help="published Allure report URL (table footers)")
     ap.add_argument("--no-specs-tree", action="store_true",
                     help="skip tree/<specs-root>/ (the specs at head, for neighbouring pages)")
+    ap.add_argument("--mask-descriptions", action="store_true",
+                    help="also write the staged read's first-pass surface: spec-sections-masked.md "
+                         "(description cells → row keys r<table>.<row>), row-keys.tsv, "
+                         "digest.masked.md and <RULE>.masked.md")
     args = ap.parse_args(argv)
     try:
         m = build(args)
@@ -331,7 +428,8 @@ def cli(argv: list[str] | None = None) -> int:
     print(f"evidence-pack {m['version']}: {m['base'][:12]}...{m['head'][:12]} → {args.out}")
     print(f"touched rules: {c['touched_rules']} · records: {c['records']} · "
           f"mechanical findings: {c['mechanical_findings']} · files: {len(m['files'])} + process/"
-          + (" + tree/" if c["tree_files"] else ""))
+          + (" + tree/" if c["tree_files"] else "")
+          + (f" · masked: {len(m['masked']['files'])} + row-keys.tsv" if m["masked"] else ""))
     return 0
 
 

@@ -411,6 +411,42 @@ def test_spec_tables_scoped_to_the_rule_heading():
     assert evidence.spec_tables(SPEC_PAGE, "ABSENT") == []
 
 
+MASK_PAGE = """# page
+
+| description | qty || status |
+|---|---||---|
+| one item | 1 || 201 |
+| a \\| pipe | 0 || 400 |
+
+| term | meaning |
+|---|---|
+| quota | the limit |
+
+## RULE-TWO
+
+prose
+
+| description | x |
+|---|---|
+| second table, first row | `1` |
+"""
+
+
+def test_mask_page_keys_every_decision_table_over_the_whole_page():
+    masked, keymap = evidence.mask_page(MASK_PAGE)
+    assert keymap == [("r1.1", "one item"), ("r1.2", "a | pipe"), ("r2.1", "second table, first row")]
+    lines = masked.splitlines()
+    assert lines[2] == "| row | qty || status |" and lines[3] == "|---|---||---|"   # header renamed, separator as authored
+    assert lines[4] == "| r1.1 | 1 || 201 |"
+    assert lines[5] == "| r1.2 | 0 || 400 |"                                      # the escaped pipe did not split the cell
+    assert "| term | meaning |" in masked and "| quota | the limit |" in masked   # not a decision table: untouched, unnumbered
+    assert "| r2.1 | `1` |" in masked and "second table" not in masked
+    assert "one item" not in masked and "prose" in masked
+    # byte-identical outside the first cell; idempotent on an already masked page
+    assert evidence.mask_page(masked) == (masked, [])
+    assert evidence.spec_tables(masked, "RULE-TWO") == [(["row", "x"], [["r2.1", "`1`"]])]
+
+
 def test_norm_cell_and_match_case():
     assert evidence.norm_cell("`C`") == evidence.norm_cell("'C'") == "C"
     assert evidence.norm_cell("`a`, `b`") == evidence.norm_cell("'a, b'")

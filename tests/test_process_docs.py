@@ -69,10 +69,21 @@ def test_evidence_brief_predicate_codes():
 
 def test_rows_brief_checks_and_candidate_shape():
     rows = read("briefs/rows.md")
-    for n in (1, 2, 3, 4, 7, 8, 9):
+    for n in (1, 2, 3, 4, 7, 8, 9, 10):
         assert re.search(rf"^{n}\. \*\*", rows, re.M), n
     assert "## Table shape — CANDIDATE — under operator iteration (2026-09-29 hold); ADVISORY ONLY, never a finding" in rows
     assert "Prose claims without a row" in rows
+
+
+def test_staged_read_names_the_masked_surface():
+    """v0.6.4: check 10 is two passes over the pack's masked surface (evidence-pack --mask-descriptions)."""
+    rows, conv, ev = read("briefs/rows.md"), read("CONVENTIONS.md"), read("briefs/evidence.md")
+    check = rows.split("10. **", 1)[1].split("\n\n", 1)[0]
+    for name in ("spec-sections-masked.md", "row-keys.tsv", "`r<table>.<row>`", "frozen",
+                 "`survives`", "`contradicted`", "`withdrawn`", "NOT repaired"):
+        assert name in check, name
+    assert "spec-sections-masked.md" in conv.split("**Rows read without their description.**", 1)[1].split("\n\n", 1)[0]
+    assert "digest.masked.md" in ev and "<RULE>.masked.md" in ev
 
 
 @pytest.mark.parametrize("brief", ["briefs/rows.md", "briefs/evidence.md", "briefs/finding-contract.md"])
