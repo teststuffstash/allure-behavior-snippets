@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.6.7 — 2026-10-31
+
+A specs review could detect a blocking defect and approve anyway — on scope, on a smaller diff, or
+on a promise that somebody files the residue later (oracle-fleet#948). Review prose is history, not
+a work queue, so a surviving blocking finding now stays in the verdict until it carries a permitted
+disposition.
+- **`briefs/finding-contract.md` (⚖)**: scope, a smaller diff and disclosure of a fork do not waive
+  a blocking check. A permitted deferral needs an existing open issue covering the exact residual,
+  evidenced by supplied context, plus the applicable page marker; missing context is stated, never
+  fetched by the confined reviewer.
+- **`briefs/rows.md` check 10**: shared prose listing both outcomes does not make empty rows
+  distinguishable.
+- **`briefs/evidence.md`**: the NO_EVIDENCE / ROW_UNPROVEN exception requires the existing
+  index-level forms and waives no other blocking check.
+Rules, conventions, the author brief, tools and flags are unchanged.
+
 ## v0.6.6 — 2026-10-29
 
 Row authors had no page of their own: workers were pointed at the reviewer's checks (briefs/rows.md
