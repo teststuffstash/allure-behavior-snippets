@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.6.6 — 2026-10-29
+
+Row authors had no page of their own: workers were pointed at the reviewer's checks (briefs/rows.md
+check 10) and recipes restated rule content, which drifts. Every worker ride that touches specs pays
+the page in tokens, so it is a checklist, not a second document.
+- **`briefs/author.md` — the author's checklist**: one page, ≤40 lines, pointers only. Each bullet
+  is an imperative plus where the rule lives ("rule N", a CONVENTIONS `§`, a rows.md check) and
+  restates no mechanism: when it applies, read before writing, a row (header = parameter list,
+  description = intent, rows read with the description hidden, ≲8 curated rows), the prose (rule 11
+  + the mark), tests (id == description cell, argnames == header, `name?` ⇄ `expected_name`, `rule()` +
+  `world`, the report shape, the gates before the PR), the PR body (`Spec changes:`, ⚖, `⚑ gap`, no unflagged adjustment to observed
+  behaviour), the review (fix per `Satisfied by:` in the same PR; a ⚖ disagreement is a new ⚖
+  row). Repo facts stay on the repo's process page (RULES.md § Adopting this process in a repo).
+- `tests/test_process_docs.py` holds the shape: the line cap, every bullet ≤2 lines and citing a
+  rule / `§` / check, every `§` resolving to a heading of the file it names, no tables, no numbered
+  checks, no dates. Ships with the wheel, the pack's `process/` and the artifact image like the
+  other briefs. Rules, conventions, the reviewer briefs, tools and flags are unchanged.
+
 ## v0.6.5 — 2026-10-29
 
 Agent worker pods read the pinned process as files. Until now the only published form of
