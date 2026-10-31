@@ -69,6 +69,12 @@ index: `🚧 WIP → #<issue>` or `⚑ gap (<date>, PR #N → work #M): <line>`.
 derived — a hand-written "verified" word or ✓ in the spec proves nothing; judge the row by its
 evidence and quote the word in that finding's `Observed:`.
 
+The index-level exception above is specific to NO_EVIDENCE / ROW_UNPROVEN; it does not waive
+check 10 or another blocking code. “Unverified here” in prose or a PR-body promise of later
+work is not that exception. Apply finding-contract.md § Action disposition when a required
+marker or the issue owning a proposed deferral is missing; do not approve on a suggestion to
+add it later. Assess scope from the pack's touched rules, not merely whether a row's text changed.
+
 Not a code: a row whose evidence exists but you would have designed differently. Not a code: a ⚖
 row whose ruling you disagree with. A digest `CELL_MISMATCH` (a spec cell contradicted by the
 test's same-named parameter) is `ROW_UNPROVEN` for that row: the case ran, but not the row.

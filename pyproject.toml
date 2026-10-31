@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "allure-behavior-snippets"
-version = "0.6.6"
+version = "0.6.7"
 description = "Allure evidence tools + the portable spec/evidence/review process (rules, conventions, reviewer briefs, context pack)"
 authors = ["Your Name <you@example.com>"]
 license = "Apache License"

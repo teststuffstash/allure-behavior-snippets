@@ -85,6 +85,11 @@ The numbers are stable IDs (`R<check>/…`). 5 (table shape) is the candidate se
     not when two rows of the same world differ (CONVENTIONS § The intent column, "Rows read
     without their description").
 
+A check-10 failure is not repaired by moving both scenarios into shared prose while leaving
+rows with no distinguishing input/expected cells. Prose supplies the general rule; cells (or
+their explicit world) identify the case. A surviving failure follows finding-contract.md
+§ Action disposition; a scoped-out emitter change or a ⚖ fork is not a waiver.
+
 - **Prose claims without a row — ADVISORY, and the ask is a MARK, not a row.** A sentence in a
   rule's prose that constrains behaviour but no row exercises is an unverified constraint: name
   it, and ask for rule 11's in-place mark (`unverified — expected to …`, or the index-level

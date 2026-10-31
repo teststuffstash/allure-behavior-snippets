@@ -66,6 +66,29 @@ code still fires on the same case becomes `E-HYGIENE_REPEAT` ([evidence.md](evid
 Otherwise `APPROVE`. A comment is never your terminal state. Your approval approves spec rows and
 their evidence — never code.
 
+## Action disposition — approval does not schedule work
+
+Nobody triages review prose into work. A blocking finding requests a fix before approval;
+ordinary advisory/Shape/Hygiene text is historical context, not an action queue. The existing
+hygiene-repeat rule still applies. Do not turn optional polish into required work or sprouts.
+
+This brief does not emit `Follow-ups:` or create issues. Where a platform reviewer has a
+machine-consumed follow-up channel, its destination and harvest policy govern that channel;
+it is not an exception to this review's blocking checks. “Someone should”, “consider later”,
+and “I would add a work item” cannot discharge a required fix.
+
+A permitted deferral must cite an existing open issue covering the exact residual, evidenced
+by the supplied context, and carry the page marker required by the applicable brief. A bare
+URL or a promised future issue is not proof of ownership. If that context is missing, state
+what is missing; do not fetch it or assume it exists. This does not create a new exception:
+an issue link cannot waive current acceptance or a blocking check that allows no deferral.
+
+A surviving blocking finding remains in Findings and makes the verdict CHANGES_REQUESTED.
+Neither “outside Touches”, the smaller diff, nor a disclosed ⚖ fork downgrades it to advisory.
+If the issue permits a carried fork but also requires no such finding, name the conflict and
+request its resolution; do not silently choose weaker acceptance. Cite the precise existing
+exception when a finding is legitimately non-blocking.
+
 ## Output shape — the review body, in this order
 
 ```
