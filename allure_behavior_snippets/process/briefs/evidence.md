@@ -34,7 +34,7 @@ row proven against nothing.
 
 - Default scope = the rules in `touched-rules.json` — which already includes every rule on a page
   whose preamble / index changed (`page-preamble`) and every rule linking a changed glossary
-  (`glossary`).
+  term — or the glossary bare, or when the change sits under no term (`glossary`).
 - Never all specs. Never rules the diff does not reach.
 
 ## The stamp comes first
