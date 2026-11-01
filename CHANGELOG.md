@@ -2,6 +2,10 @@
 
 ## v0.6.8 — 2026-11-01
 
+Two scope fixes from the oracle-fleet #977 review rounds, one release.
+
+### Pass-1 prior keys
+
 Pass 1 of the staged read had no round memory: the prior review quotes descriptions, so it stays
 out of the masked allow-list, and every round re-raised the same candidates. On oracle-fleet
 #977 the masked pass raised 15, 3, 4 and 12 candidates over four rounds; the one survivor
@@ -32,7 +36,32 @@ re-adjudicated by pass 2 four times with the identical ruling.
   three rounds of chaining, a row inserted before `r1.1` (dropped) beside an untouched rule
   (carried), a table added earlier on the page (later keys dropped), a missing trailer and an
   unknown head (no file), absence, and the masking guard (no quoted fragment reaches the file).
-Rules, conventions, the author brief and the evidence brief are unchanged.
+
+### `touched-rules` glossary source scoped by term
+
+`touched-rules` marked a rule as touched from the `glossary` source whenever `glossary.md` changed
+at all and the rule's section linked the glossary anywhere — over-scoped by term. On oracle-fleet
+#977 (two new terms, `dump family` and `promoted`) 4 of 33 touched rules carried the source, 2 of
+them for terms the PR never changed; a glossary-heavy PR pulls in every linker of every term. (The
+extra review rounds on #977 themselves came through `page-preamble` scope plus the hygiene belt —
+#49 — not through this source.)
+- **`glossary` source scoped by the changed term**: a glossary hunk is attributed to the term
+  heading(s) whose section spans its non-blank lines (`##`+ headings, nested ones also mark their
+  parent; both diff sides, so a renamed term marks both names), and a rule is touched only when
+  its section links one of those anchors (`glossary.md#<slug>`). Slugs compare normalised
+  (lowercase, ASCII-folded, punctuation dropped, `-` runs collapsed), so mkdocs' and GitHub's
+  dialects both resolve. A heading inside a CommonMark code fence (backtick or tilde) is not a
+  term — and, the same way, never opens or closes a rule section for the `spec-hunk` source; a
+  page or glossary with a fence left open at EOF is read page-wide.
+- **Fallback-safe**: a bare `glossary.md` link, or an anchor no heading on either side claims,
+  counts as linking every term; a hunk no term claims (the title, the preamble, a structural
+  change above the first `##`), or a fence left open at EOF, keeps the old behaviour — every
+  glossary-linking rule is touched.
+- `briefs/rows.md` Inputs and `briefs/evidence.md` Scope say what `glossary` now means; the
+  README's `touched-rules` paragraph likewise.
+
+Rules, conventions, the author brief and the pack layout are unchanged;
+`--prior-review` is the one new flag.
 
 ## v0.6.7 — 2026-10-31
 

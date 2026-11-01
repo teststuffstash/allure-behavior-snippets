@@ -14,8 +14,9 @@ Read intent before evidence; never read implementation code; the inputs dir is t
 
 - `spec-sections.md` — each touched rule's section at head (with why it was touched), then the
   spec diff. `touched-rules.json` lists the rules; a `page-preamble` source means the page's
-  preamble or index changed, so every rule on it is in scope; `glossary` means the glossary
-  changed under rules that link it.
+  preamble or index changed, so every rule on it is in scope; `glossary` means a glossary term
+  changed under rules that link its anchor (a bare `glossary.md` link counts as every term; a
+  glossary change no term claims puts every linking rule in scope).
 - `spec-sections-masked.md` — the same sections with every description cell a row key
   `r<table>.<row>` (header `row`), no diff; `row-keys.tsv` maps the keys back; `digest.masked.md`
   and `<RULE>.masked.md` are the evidence surfaces keyed the same way. Pass 1 of check 10 reads

@@ -72,8 +72,10 @@ touched-rules [--base master] [--head HEAD] [--repo DIR] [--specs-root specs]
 A rule is touched by a spec hunk inside its section (`spec-hunk`), a preamble / index hunk on its
 page (`page-preamble`, page-wide), a changed test labelled `rule("ID")` (`test-label`, by AST), a
 changed module under a `--code-root` quoting the ID (`event-map`, off by default), a changed
-`*.schema.json` listing it under `x-requirements` (`schema`), or a glossary change under a rule
-that links the glossary (`glossary`); `orphan` marks an ID with no heading. stdout is one ID per
+`*.schema.json` listing it under `x-requirements` (`schema`), or a glossary term changed under a
+rule that links its anchor — `glossary.md#<slug>`; a bare `glossary.md` link counts as every term,
+and a hunk no term heading claims (preamble / structure) falls back to every glossary-linking rule
+(`glossary`); `orphan` marks an ID with no heading. stdout is one ID per
 line (or `--json` rows `{rule, page, path, sources}`); `--out` also writes `touched-rules.json`
 + `touched-rules.txt`. Exit 0 always.
 
