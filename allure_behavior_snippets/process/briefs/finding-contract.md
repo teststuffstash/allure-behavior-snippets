@@ -58,7 +58,9 @@ When `prior-review.md` holds a review, FIRST list each of its finding IDs as `re
 `still open: <what is still missing>`, THEN review what changed. A finding you drop without
 marking it is a contradiction the worker cannot see. A prior `H-<CODE>/<case>` note whose same
 code still fires on the same case becomes `E-HYGIENE_REPEAT` ([evidence.md](evidence.md)
-§ Report hygiene).
+§ Report hygiene). On a staged read the prior pass-1 rulings reach pass 1 as keys only
+(`pass1-prior.tsv`, [rows.md](rows.md) check 10): a ruling stands across rounds unless the row
+changed, so pass 2 restates it in one line instead of arguing it again.
 
 ## The verdict — one for both briefs
 

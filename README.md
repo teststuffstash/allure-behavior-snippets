@@ -111,8 +111,10 @@ With `--mask-descriptions` (the staged read's first pass, briefs/rows.md check 1
 | `spec-sections-masked.md` | the same sections, every decision table's `description` cell → row key `r<table>.<row>` (numbered over the whole page), the header cell → `row`; no spec diff |
 | `row-keys.tsv` | `key<TAB>description`, grouped under a `# <page>` line |
 | `digest.masked.md`, `<RULE>.masked.md` | the digest and per-rule tables with the case column keyed the same way |
+| `pass1-prior.tsv` | with `--prior-review`: the previous review's "Pass-1 adjudication" as keys only — `key<TAB>ruling<TAB>round<TAB>rule` (ranges expanded, slashes split; ruling ∈ survives / contradicted / withdrawn / noted; round = the review's stated round, else `prior`); absent when the review has no such section |
 
-`tree/`, `evidence/`, `evidence.json` and `attachments/` stay unmasked; `manifest.json` `masked` lists what is.
+`tree/`, `evidence/`, `evidence.json` and `attachments/` stay unmasked; `manifest.json` `masked` lists what is
+(`masked.files` is the allow-list pass 1 reads; `pass1-prior.tsv` is on it, `row-keys.tsv` is not).
 
 When no rule is touched it exits 0 with the empty forms of these files. Exit 64 on bad input.
 

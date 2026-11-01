@@ -86,6 +86,12 @@ def test_staged_read_names_the_masked_surface():
         assert name in check, name
     assert "spec-sections-masked.md" in conv.split("**Rows read without their description.**", 1)[1].split("\n\n", 1)[0]
     assert "digest.masked.md" in ev and "<RULE>.masked.md" in ev
+    # v0.6.8: pass 1's round memory is keys only; the brief and the contract name the file + the rule
+    for name in ("pass1-prior.tsv", "(prior: ruled round N)", "not re-argued", "not\n    raised again"):
+        assert name in check, name
+    assert "pass1-prior.tsv" in rows.split("## The checks", 1)[0]
+    fc = read("briefs/finding-contract.md")
+    assert "pass1-prior.tsv" in fc.split("## Later rounds", 1)[1].split("## ", 1)[0]
 
 
 @pytest.mark.parametrize("brief", ["briefs/rows.md", "briefs/evidence.md", "briefs/finding-contract.md"])

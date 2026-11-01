@@ -195,6 +195,93 @@ def test_mask_descriptions_on_an_empty_pack(tmp_path):
     assert json.loads((out / "manifest.json").read_text())["masked"]["files"] == ["digest.masked.md", "spec-sections-masked.md"]
 
 
+PRIOR_REVIEW = """## Specs review
+Verdict: CHANGES_REQUESTED — R10/tools/statute#RT-STATUTE-PROVISION
+Process: allure-behavior-snippets 0.6.7
+
+Prior findings: none (round 1). `pass1.md` is adjudicated below.
+
+### Pass-1 adjudication (revealed descriptions, cells, evidence)
+- **P1-1 r18.1/r18.2, RT-STATUTE-PROVISION: survives.** Only the descriptions tell the rows apart ("whole-§ renders (1) once" and "sort: (2) before (10)"). See R10 below.
+- **P1-2 r19.3/r19.4: contradicted.** The rows differ in the `paragraph` cell, and the `figures-kas` world prose says § 4 holds an over-cap image.
+- **#3 (r71.3–r71.5, `big(...)` notation):** withdrawn. The legend defines `big(...)` as "the over-cap image".
+- **P1-4 (CHECKSUM tombstones, check 3):** withdrawn. The quoted carrier rows exist and ran.
+1. r20.1/r20.2 (RT-STATUTE-DATE, "Display punctuation") — **survives**.
+   - Only the descriptions tell the rows apart: "paren display (1)" against "paren display (2)".
+   - r99.9 is quoted here in a continuation line and must not be carried.
+
+### Findings
+**R10/tools/statute#RT-STATUTE-PROVISION**
+- Rule/case: RT-STATUTE-PROVISION · "whole-§ renders (1) once"
+- Observed: r18.1 and r18.2 carry identical cells ("sort: (2) before (10)" is the hidden condition).
+"""
+
+
+def test_prior_rulings_parses_the_adjudication_section_as_keys_only():
+    rows = pack.prior_rulings(PRIOR_REVIEW)
+    assert [(r["key"], r["ruling"], r["rule"]) for r in rows] == [
+        ("r18.1", "survives", "RT-STATUTE-PROVISION"), ("r18.2", "survives", "RT-STATUTE-PROVISION"),
+        ("r19.3", "contradicted", ""), ("r19.4", "contradicted", ""),
+        ("r71.3", "withdrawn", ""), ("r71.4", "withdrawn", ""), ("r71.5", "withdrawn", ""),   # range expanded
+        ("r20.1", "survives", "RT-STATUTE-DATE"), ("r20.2", "survives", "RT-STATUTE-DATE"),
+    ]
+    assert {r["round"] for r in rows} == {"1"}                      # "Prior findings: none (round 1)"
+    assert not any(r["key"] == "r99.9" for r in rows)              # continuation lines are not read
+    assert not any(r["key"] == "P1" for r in rows)
+    later = PRIOR_REVIEW.replace("Prior findings: none (round 1). ", "Prior findings (round 3 review at a7bd9f51):\n- R10 resolved.\n")
+    assert {r["round"] for r in pack.prior_rulings(later)} == {"prior"}
+    # the inline form (`Pass-1 adjudication (...):`) and the `noted` ruling
+    inline = ("Pass-1 adjudication (revealed descriptions):\n- P1-1 r18.1/r18.2, RT-STATUTE-PROVISION — noted, "
+              "not a finding (survives as before).\nFindings: none\n- r5.5 — this is a Rows line, not an adjudication\n")
+    assert [(r["key"], r["ruling"], r["round"]) for r in pack.prior_rulings(inline)] == [
+        ("r18.1", "noted", "prior"), ("r18.2", "noted", "prior")]
+    assert pack.prior_rulings(None) == [] and pack.prior_rulings("## Specs review\nFindings: none\n") == []
+    assert pack.pass1_prior_tsv(rows[:1]) == "key\truling\tround\trule\nr18.1\tsurvives\t1\tRT-STATUTE-PROVISION\n"
+
+
+def test_prior_rulings_carry_no_text_from_the_review():
+    """The masking guarantee: the file holds keys, rule ids, rulings and a round — never a quote."""
+    import re
+    tsv = pack.pass1_prior_tsv(pack.prior_rulings(PRIOR_REVIEW))
+    quotes = re.findall(r'"([^"]{3,})"|`([^`]{3,})`', PRIOR_REVIEW)
+    assert quotes
+    for a, b in quotes:
+        assert (a or b) not in tsv, (a or b)
+    for word in ("descriptions", "legend", "paragraph", "tombstones", "punctuation", "P1-", "#3", "**"):
+        assert word not in tsv, word
+    for line in tsv.splitlines()[1:]:
+        key, ruling, rnd, rule = line.split("\t")
+        assert re.fullmatch(r"r\d+(\.\d+)?", key) and ruling in pack.RULINGS
+        assert re.fullmatch(r"\d+|prior", rnd) and (rule == "" or re.fullmatch(pack.tr.DEFAULT_ID_REGEX, rule))
+
+
+def test_mask_descriptions_with_a_prior_review_writes_pass1_prior(repo, tmp_path):
+    res = write_results(tmp_path / "results", [_result("one item"), _result("zero items")], commit=repo.head)
+    (tmp_path / "review.md").write_text(PRIOR_REVIEW, encoding="utf-8")
+    out = tmp_path / "pack"
+    assert run(repo, res, out, "--no-specs-tree", "--mask-descriptions", "--prior-review", str(tmp_path / "review.md")) == 0
+    tsv = (out / "pass1-prior.tsv").read_text()
+    assert tsv.startswith("key\truling\tround\trule\nr18.1\tsurvives\t1\tRT-STATUTE-PROVISION\n")
+    assert "whole-§" not in tsv and "descriptions" not in tsv
+    m = json.loads((out / "manifest.json").read_text())
+    assert "pass1-prior.tsv" in m["masked"]["files"] and m["masked"]["prior"] == "pass1-prior.tsv"
+    assert "pass1-prior.tsv" in m["files"] and m["inputs"]["prior_review"] is True
+    assert (out / "prior-review.md").read_text() == PRIOR_REVIEW          # pass 2 still gets the review itself
+    # no prior review → no file, no entry; a prior review without the section → the same
+    assert run(repo, res, out, "--no-specs-tree", "--mask-descriptions") == 0
+    m = json.loads((out / "manifest.json").read_text())
+    assert not (out / "pass1-prior.tsv").exists() and "pass1-prior.tsv" not in m["masked"]["files"]
+    assert m["masked"]["prior"] is None and "pass1-prior.tsv" not in m["files"]
+    (tmp_path / "review.md").write_text("## Specs review\nVerdict: APPROVE\nFindings: none\n", encoding="utf-8")
+    assert run(repo, res, out, "--no-specs-tree", "--mask-descriptions", "--prior-review", str(tmp_path / "review.md")) == 0
+    assert not (out / "pass1-prior.tsv").exists()
+    assert "pass1-prior.tsv" not in json.loads((out / "manifest.json").read_text())["masked"]["files"]
+    # without --mask-descriptions there is no pass 1, so no pass-1 surface
+    (tmp_path / "review.md").write_text(PRIOR_REVIEW, encoding="utf-8")
+    assert run(repo, res, out, "--no-specs-tree", "--prior-review", str(tmp_path / "review.md")) == 0
+    assert not (out / "pass1-prior.tsv").exists() and json.loads((out / "manifest.json").read_text())["masked"] is None
+
+
 def test_no_touched_rule_writes_an_empty_pack(tmp_path):
     repo = base_repo(tmp_path / "repo")
     repo.write("README.md", "changed\n")

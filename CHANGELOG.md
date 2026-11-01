@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.6.8 — 2026-11-01
+
+Pass 1 of the staged read had no round memory: the prior review quotes descriptions, so it stays
+out of the masked allow-list, and every round re-raised the same candidates. On oracle-fleet
+#977 the masked pass raised 15, 3, 4 and 12 candidates over four rounds; the one survivor
+(statute rows r18.1/r18.2, identical cells) was the same pre-existing pair every round,
+re-adjudicated by pass 2 four times with the identical ruling.
+- `evidence-pack --mask-descriptions --prior-review FILE`: `pass1-prior.tsv` — the previous
+  review's "Pass-1 adjudication" section as KEYS ONLY: `key<TAB>ruling<TAB>round<TAB>rule`
+  (`r18.1/r18.2` split, `r71.3–r71.5` expanded; ruling ∈ survives / contradicted / withdrawn /
+  noted as the review phrased it; round = the review's stated round, else `prior`; rule when the
+  line names one). Only an item's head line is read, never its continuation; no other text of the
+  review is carried. Listed in `manifest.masked.files` (+ `masked.prior`). No prior review, or no
+  adjudication section → no file, no entry.
+- **`briefs/rows.md` check 10**: a key ruled `survives` / `noted` in a prior round is re-listed
+  as `(prior: ruled round N)` and not re-argued — pass 2 re-adjudicates it only when the spec
+  diff touches the row; a key ruled `withdrawn` / `contradicted` is not raised again on the same
+  grounds. **`briefs/finding-contract.md` § Later rounds** names the file.
+- Tests: the three real-shaped line forms, ranges, the inline section form, continuation lines
+  not read, absence, and the masking guard (no quoted fragment of the review reaches the file).
+Rules, conventions, the author brief and the evidence brief are unchanged.
+
 ## v0.6.7 — 2026-10-31
 
 A specs review could detect a blocking defect and approve anyway — on scope, on a smaller diff, or

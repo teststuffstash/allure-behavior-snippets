@@ -15,7 +15,10 @@ under is the process in its inputs.
 ``spec-sections-masked.md`` (every decision table's description cell → row key ``r<t>.<r>``,
 numbered over the whole page), ``row-keys.tsv`` (key → description), and the masked twins
 ``digest.masked.md`` + ``<RULE>.masked.md`` (the case column keyed the same way). ``tree/``,
-``evidence/`` and the attachments stay unmasked; ``manifest.json`` lists the masked files.
+``evidence/`` and the attachments stay unmasked; ``manifest.json`` lists the masked files. With
+``--prior-review`` it also writes ``pass1-prior.tsv`` — the keys the previous review's "Pass-1
+adjudication" ruled on (key, ruling, round, rule) and nothing else, so pass 1 keeps its memory
+without a description reaching it.
 
 ``process-path`` prints the installed ``process/`` dir (the briefs, RULES.md, CONVENTIONS.md).
 stdlib only.
@@ -25,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -45,6 +49,17 @@ NONE_TEXT = {
                         "`Spec changes:`\n"),
     "pr-body.md": "pr body: not provided — `Spec changes:` cannot be read from this pack\n",
 }
+
+
+RULINGS = ("survives", "contradicted", "withdrawn", "noted")
+PASS1_PRIOR = "pass1-prior.tsv"
+_ADJUDICATION_RE = re.compile(r"^\s*(?:#{1,6}\s*)?(?:\*\*)?pass[- ]?1 adjudication", re.IGNORECASE)
+_ITEM_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
+_KEY_RE = re.compile(r"\br(\d+)(?:\.(\d+))?\b")
+_KEY_RANGE_RE = re.compile(r"\br(\d+)\.(\d+)\s*[-–—]\s*r(\d+)\.(\d+)\b")
+_RULING_RE = re.compile(r"\b(" + "|".join(RULINGS) + r")\b", re.IGNORECASE)
+_LABEL_RE = re.compile(r"\bP\d+-\d+\b")
+_ROUND_RE = re.compile(r"^Prior findings:\s*none\s*\(round\s+(\d+)\)", re.IGNORECASE | re.MULTILINE)
 
 
 class PackError(Exception):
@@ -199,6 +214,73 @@ def _baseline_line(baseline_file: str | None, commit: str | None, scope: str) ->
             f"VANISHED only inside this scope.")
 
 
+def _adjudication_items(review: str) -> list[str]:
+    """The head line of every list item under the review's "Pass-1 adjudication" heading (an
+    item's indented continuation lines are not read: that is where a quoted description lives).
+    The section ends at the next heading or unindented non-list line (`Findings:` …)."""
+    lines = review.split("\n")
+    start = next((i for i, l in enumerate(lines) if _ADJUDICATION_RE.match(l)), None)
+    if start is None:
+        return []
+    items: list[str] = []
+    for line in lines[start + 1:]:
+        if not line.strip():
+            continue
+        if line.startswith("#") or (not line[0].isspace() and not _ITEM_RE.match(line)):
+            break
+        if _ITEM_RE.match(line):
+            items.append(_ITEM_RE.sub("", line, count=1))
+    return items
+
+
+def _expand_keys(text: str) -> list[str]:
+    """Row keys named in one adjudication line, in order: `r18.1/r18.2` splits, `r71.3–r71.5`
+    expands (same table only), a table-level `r52` stays as written."""
+    keys: list[str] = []
+    spans: list[tuple[int, int]] = []
+    for m in _KEY_RANGE_RE.finditer(text):
+        t1, a, t2, b = m.groups()
+        if t1 == t2 and int(a) <= int(b):
+            keys += [f"r{t1}.{n}" for n in range(int(a), int(b) + 1)]
+            spans.append(m.span())
+    for m in _KEY_RE.finditer(text):
+        if any(lo <= m.start() < hi for lo, hi in spans):
+            continue
+        keys.append(m.group(0))
+    seen: set[str] = set()
+    return [k for k in keys if not (k in seen or seen.add(k))]
+
+
+def prior_rulings(review: str | None, id_regex: str = tr.DEFAULT_ID_REGEX) -> list[dict]:
+    """The previous review's pass-1 rulings as keys only: one record per row key the
+    "Pass-1 adjudication" section names, ``{key, ruling, round, rule}``. ``ruling`` is the first
+    of ``RULINGS`` on the item's line, ``round`` the review's own round when it states one
+    (``Prior findings: none (round N)``) else ``prior``, ``rule`` the first requirement id on the
+    line (``""`` when none). A line without a row key or a ruling yields nothing; no other text
+    of the review is carried — pass 1 must never see a description."""
+    if not review:
+        return []
+    m = _ROUND_RE.search(review)
+    rnd = m.group(1) if m else "prior"
+    rule_re = re.compile(rf"(?<![\w-])({id_regex})(?![\w-])")
+    out: list[dict] = []
+    for item in _adjudication_items(review):
+        ruling = _RULING_RE.search(item)
+        keys = _expand_keys(item)
+        if not ruling or not keys:
+            continue
+        rm = rule_re.search(_LABEL_RE.sub("", item))
+        rule = rm.group(1) if rm else ""
+        out += [{"key": k, "ruling": ruling.group(1).lower(), "round": rnd, "rule": rule} for k in keys]
+    return out
+
+
+def pass1_prior_tsv(rulings: list[dict]) -> str:
+    """``pass1-prior.tsv``: ``key<TAB>ruling<TAB>round<TAB>rule`` under a header line."""
+    return "".join(f"{r['key']}\t{r['ruling']}\t{r['round']}\t{r['rule']}\n"
+                   for r in [{"key": "key", "ruling": "ruling", "round": "round", "rule": "rule"}, *rulings])
+
+
 def _filter_rules(evidence: dict, ids: list[str]) -> dict:
     return {**evidence, "rules": {k: v for k, v in evidence.get("rules", {}).items() if k in ids}}
 
@@ -257,6 +339,12 @@ def build(args: argparse.Namespace) -> dict:
         write("spec-sections-masked.md", spec_sections(rows, masked_specs, layout, base, head, None))
         write("row-keys.tsv", row_keys_tsv(keymaps, used))
         masked_files += ["spec-sections-masked.md"]
+        # 2c. pass 1's round memory: the previous review's pass-1 rulings as KEYS only (the
+        #     review itself quotes descriptions, so it stays out of the masked allow-list)
+        prior_keys = prior_rulings(prior, layout.id_regex)
+        if prior_keys:
+            write(PASS1_PRIOR, pass1_prior_tsv(prior_keys))
+            masked_files.append(PASS1_PRIOR)
 
     # 3. evidence for the touched rules (the digest reads the WHOLE run, so a case that moved
     #    to another rule is classified relabelled, not vanished; the files carry touched rules)
@@ -382,6 +470,7 @@ def build(args: argparse.Namespace) -> dict:
                    "pr_body": body is not None},
         "files": sorted(files),
         "masked": ({"files": sorted(masked_files), "keys": "row-keys.tsv", "tree": "unmasked",
+                    "prior": PASS1_PRIOR if PASS1_PRIOR in masked_files else None,
                     "unmasked": ["spec-sections.md", "digest.md", "<RULE>.md", "evidence.json",
                                  "evidence/", "baseline-evidence.json", "attachments/", "tree/"]}
                    if args.mask_descriptions else None),
@@ -417,7 +506,8 @@ def cli(argv: list[str] | None = None) -> int:
     ap.add_argument("--mask-descriptions", action="store_true",
                     help="also write the staged read's first-pass surface: spec-sections-masked.md "
                          "(description cells → row keys r<table>.<row>), row-keys.tsv, "
-                         "digest.masked.md and <RULE>.masked.md")
+                         "digest.masked.md and <RULE>.masked.md; with --prior-review also "
+                         "pass1-prior.tsv (the prior pass-1 rulings, keys only)")
     args = ap.parse_args(argv)
     try:
         m = build(args)
