@@ -111,8 +111,10 @@ With `--mask-descriptions` (the staged read's first pass, briefs/rows.md check 1
 | `spec-sections-masked.md` | the same sections, every decision table's `description` cell → row key `r<table>.<row>` (numbered over the whole page), the header cell → `row`; no spec diff |
 | `row-keys.tsv` | `key<TAB>description`, grouped under a `# <page>` line |
 | `digest.masked.md`, `<RULE>.masked.md` | the digest and per-rule tables with the case column keyed the same way |
+| `pass1-prior.tsv` | with `--prior-review`: the previous review's "Pass-1 adjudication" as keys only — `key<TAB>ruling<TAB>round<TAB>rule` (ranges expanded, slashes split; ruling read from the verdict position only, ∈ survives / contradicted / withdrawn / noted; the re-listing form `<key> — prior: ruled <ruling> round <N>` carries its original ruling and round; else round = the review's stated round or `prior`). A key is carried only while it provably names the same row: the review's `<!-- specs-review head=… -->` trailer resolves, the record names a rule, that rule's section is unchanged since and the key maps to the same row — otherwise dropped, and with nothing left (or no trailer) there is no file; `manifest.json` `masked.prior` says why |
 
-`tree/`, `evidence/`, `evidence.json` and `attachments/` stay unmasked; `manifest.json` `masked` lists what is.
+`tree/`, `evidence/`, `evidence.json` and `attachments/` stay unmasked; `manifest.json` `masked` lists what is
+(`masked.files` is the allow-list pass 1 reads; `pass1-prior.tsv` is on it, `row-keys.tsv` is not).
 
 When no rule is touched it exits 0 with the empty forms of these files. Exit 64 on bad input.
 

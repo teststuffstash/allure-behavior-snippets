@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.6.8 — 2026-11-01
+
+Pass 1 of the staged read had no round memory: the prior review quotes descriptions, so it stays
+out of the masked allow-list, and every round re-raised the same candidates. On oracle-fleet
+#977 the masked pass raised 15, 3, 4 and 12 candidates over four rounds; the one survivor
+(statute rows r18.1/r18.2, identical cells) was the same pre-existing pair every round,
+re-adjudicated by pass 2 four times with the identical ruling.
+- `evidence-pack --mask-descriptions --prior-review FILE`: `pass1-prior.tsv` — the previous
+  review's "Pass-1 adjudication" section as KEYS ONLY: `key<TAB>ruling<TAB>round<TAB>rule`
+  (`r18.1/r18.2` split, `r71.3–r71.5` expanded; ruling ∈ survives / contradicted / withdrawn /
+  noted; round = the review's stated round, else `prior`; rule when the line names one). Only an
+  item's head line is read, never its continuation; quoted and backticked spans are blanked and
+  the ruling comes from the verdict position only (`**survives**`, `: contradicted.`,
+  `— withdrawn.`) — a line with none or with two different ones is rejected; no other text of
+  the review is carried. Listed in `manifest.masked.files` (+ `masked.prior`).
+- Keys are positional per page, so a ruling is carried only while it provably names the same
+  row: the review's `<!-- specs-review head=… -->` trailer resolves in the repo, the record names
+  a rule, that rule's section is byte-identical since the prior head and the key maps to the
+  same row at both (a table added earlier on the page renumbers every later key). Anything else
+  is dropped and reviewed afresh; no trailer, an unknown head or nothing left → no file, the
+  manifest's `masked.prior` states why (fail closed). No prior review or no adjudication
+  section → no file, no entry.
+- **`briefs/rows.md` check 10**: pass 1 re-lists EVERY key in `pass1-prior.tsv`, one line each,
+  as `- <key> — prior: ruled <ruling> round <N>` and does not re-argue it; pass 2 carries those
+  lines into its adjudication unchanged, so the chain persists across rounds (the parser reads
+  that form back with its original ruling and round), and re-adjudicates a key only when the
+  spec diff touches its row. **`briefs/finding-contract.md` § Later rounds** names the file.
+- Tests: the three real-shaped line forms, ranges, the inline section form, continuation lines
+  not read, the verdict position (a quoted "withdrawn" on a surviving line), an ambiguous line,
+  three rounds of chaining, a row inserted before `r1.1` (dropped) beside an untouched rule
+  (carried), a table added earlier on the page (later keys dropped), a missing trailer and an
+  unknown head (no file), absence, and the masking guard (no quoted fragment reaches the file).
+Rules, conventions, the author brief and the evidence brief are unchanged.
+
 ## v0.6.7 — 2026-10-31
 
 A specs review could detect a blocking defect and approve anyway — on scope, on a smaller diff, or
