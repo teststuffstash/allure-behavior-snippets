@@ -27,7 +27,12 @@ met here:
 - `allure-evidence`: every line of the digest's `**Hygiene:**` block now ends in the case's
   status against `--baseline` — `- <CODE> <RULE> <case>: <metric> [added|changed|unchanged]`, or
   `[no baseline]` without one — so pass 2 reads eligibility off the digest instead of guessing;
-  the line is otherwise unchanged (consumers that grep `^- <CODE> ` keep working).
+  the line is otherwise unchanged (consumers that grep `^- <CODE> ` keep working). A per-rule
+  `**Cases:**` block before it places every case, flagged or not (a code the reviewer raises on
+  its own judgment has no Hygiene line): `added n · changed n · unchanged n`, then one
+  `- [added] <case>` / `- [changed] <case>` line each (`· world: <w>` when named; a case absent
+  from the list is unchanged); no baseline → `**Cases:** no baseline — every case counts as added
+  or changed (<n> cases)`.
   `evidence.case_change(rule, record, baseline)` is the one definition: a baseline record of the
   same (rule · world · case) that is identical on `params`, `steps` and `attachments` →
   unchanged; none of that identity → added; else changed (a baseline record lacking one of those

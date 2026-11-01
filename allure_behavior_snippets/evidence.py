@@ -545,6 +545,30 @@ def case_change(rule, record, baseline):
     return "changed"
 
 
+def case_lines(rule, evidence, baseline=None):
+    """``**Cases:**`` block: the rule's cases against the baseline — the counts line
+    ``added <n> · changed <n> · unchanged <n>`` then one ``- [added] <case>`` /
+    ``- [changed] <case>`` line per added or changed record (``· world: <w>`` when the record
+    names one; a case absent from the list is unchanged), so the reviewer can place a case the
+    tool flagged nothing on. No baseline → one fallback line: every case counts as eligible."""
+    recs = evidence["rules"].get(rule, [])
+    if baseline is None:
+        return [f"**Cases:** {NO_BASELINE_MARK} — every case counts as added or changed "
+                f"({len(recs)} cases)"]
+    counts = {"added": 0, "changed": 0, "unchanged": 0}
+    listed = []
+    for r in recs:
+        mark = case_change(rule, r, baseline)
+        counts[mark] += 1
+        if mark != "unchanged":
+            world = f" · world: {r['world']}" if r.get("world") else ""
+            line = f"- [{mark}] {r['case']}{world}"
+            if line not in listed:
+                listed.append(line)
+    head = f"**Cases:** " + " · ".join(f"{k} {counts[k]}" for k in ("added", "changed", "unchanged"))
+    return [head, ""] + (listed or ["- none added or changed"])
+
+
 def hygiene_lines(rule, evidence, baseline=None):
     """``**Hygiene:**`` body: per-rule totals, then one line per case crossing a
     threshold (codes in fixed order), each ending in the case's status against the
@@ -645,6 +669,8 @@ def render_digest(rules, evidence, baseline=None, report_url=None, spec=None):
         if spec.get(rule):
             found += spec_findings(rule, spec[rule], evidence["rules"].get(rule, []))
         lines += found or ["- none"]
+        lines.append("")
+        lines += case_lines(rule, evidence, baseline)
         lines.append("")
         lines.append("**Hygiene:**")
         lines.append("")

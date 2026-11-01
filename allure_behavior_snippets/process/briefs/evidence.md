@@ -100,9 +100,13 @@ no second definition.
 - **The belt escalates only cases the PR added or changed.** Case identity = (rule · world ·
   case) ([../CONVENTIONS.md](../CONVENTIONS.md) § Evidence row identity); a case is *changed* when
   its record's parameters, steps or attachments differ from the baseline record of that
-  identity. Every line of the digest's `Hygiene:` block ends in the case's mark — `[added]`,
-  `[changed]`, `[unchanged]`, or `[no baseline]` when the pack carries no baseline — read
-  eligibility off that mark, never off the rule or the diff. A code on an `[unchanged]` case is
+  identity. The digest states it per rule: the `Cases:` block (`added n · changed n ·
+  unchanged n`, then one `- [added] <case>` / `- [changed] <case>` line each — a case absent from
+  that list is unchanged, so a code you raise on your own judgment is placed there too), and
+  every line of the `Hygiene:` block ends in its case's mark — `[added]`, `[changed]`,
+  `[unchanged]`. Read eligibility off the digest, never off the rule or the diff. `[no baseline]`
+  (the `Cases:` block then reads `no baseline — every case counts as added or changed`) means
+  every case is eligible — the belt above, unnarrowed. A code on an `[unchanged]` case is
   a NOTE (historical context — [finding-contract.md](finding-contract.md) § Action disposition),
   never `E-HYGIENE_REPEAT`, whatever rule the case sits under and however that rule entered the
   scope (`spec-hunk`, `test-label`, `page-preamble`, `glossary`): a page-wide restructure puts

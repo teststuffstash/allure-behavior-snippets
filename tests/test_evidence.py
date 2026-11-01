@@ -211,7 +211,8 @@ def test_no_findings_is_none(tmp_path):
         {"case": "a", "world": None, "status": "passed", "params": {"p": 1}, "attachments": [],
          "steps": [], "failure": None, "test": "t#a", "file": "t"}]}}
     lines = evidence.render_digest(["R"], ev)
-    assert lines[-8:] == ["- none", "", "**Hygiene:**", "", "cases 1 · attachments 0 · bytes 0 · max depth 0", "", "- none", ""]
+    assert lines[-10:] == ["- none", "", "**Cases:** no baseline — every case counts as added or changed (1 cases)", "",
+                           "**Hygiene:**", "", "cases 1 · attachments 0 · bytes 0 · max depth 0", "", "- none", ""]
 
 
 def test_param_columns_drop_all_empty():
@@ -335,6 +336,42 @@ def test_hygiene_lines_mark_the_case_status_against_the_baseline(results_dir, tm
     assert f"- ATTACH_BULK {HYG} bulk: attachments_total=9 (threshold 8) [added]" in hyg_part
     assert "[no baseline]" not in hyg_part
     assert not any(l.startswith("- ") and l.endswith("]") for l in findings_part.splitlines())
+
+
+def test_digest_cases_block_places_every_case(results_dir, tmp_path):
+    """v0.6.9 (#49, review P2): a case the tool flags nothing on (the Hygiene block reads
+    ``- none``) still gets its status — the per-rule ``**Cases:**`` block lists every added /
+    changed case, the unchanged ones are the complement; no baseline → the fallback line."""
+    ev = evidence.build_evidence(evidence.load_results([results_dir]), generated="2026-09-28",
+                                 results_dirs=[results_dir])
+    clean = dict({r["case"]: r for r in ev["rules"][HYG]}["clean"], thread_broken=[],
+                 phases={"given": ["given: w"], "when": ["when: x"], "then": ["verdict: ok"], "other": []})
+    quiet = {**clean, "case": "quiet", "world": "w1", "params": {"n": 2}}
+    same = {**clean, "case": "same"}
+    ev2 = {"run": {"generated": "x", "files": ["tests.test_hyg"], "unlabelled": []},
+           "rules": {"Q": [dict(clean, case="fresh"), quiet, same]}}
+    baseline = {"run": {}, "rules": {"Q": [
+        {k: v for k, v in same.items() if k != "hygiene"},                       # unchanged
+        {k: v for k, v in quiet.items() if k != "hygiene"} | {"params": {"n": 3}},  # changed
+    ]}}
+    assert evidence.hygiene_lines("Q", ev2, baseline)[2:] == ["- none"], "nothing mechanically flagged"
+    assert evidence.case_lines("Q", ev2, baseline) == [
+        "**Cases:** added 1 · changed 1 · unchanged 1", "",
+        "- [added] fresh", "- [changed] quiet · world: w1"]
+    assert evidence.case_lines("Q", ev2, None) == [
+        "**Cases:** no baseline — every case counts as added or changed (3 cases)"]
+    assert evidence.case_lines("Q", {"run": {}, "rules": {"Q": [same]}}, baseline) == [
+        "**Cases:** added 0 · changed 0 · unchanged 1", "", "- none added or changed"]
+    # placement: after Findings, before Hygiene; the Hygiene marks stay as they are
+    out = tmp_path / "out"
+    evidence.write_outputs(ev2, out, rules=["Q"], baseline=baseline)
+    text = (out / "digest.md").read_text(encoding="utf-8")
+    assert ("**Findings:**\n\n- none\n\n**Cases:** added 1 · changed 1 · unchanged 1\n\n"
+            "- [added] fresh\n- [changed] quiet · world: w1\n\n**Hygiene:**\n\n") in text
+    evidence.write_outputs(ev, out, rules=[HYG])
+    text = (out / "digest.md").read_text(encoding="utf-8")
+    assert "\n**Cases:** no baseline — every case counts as added or changed (6 cases)\n\n**Hygiene:**\n" in text
+    assert f"- STEP_FLAT {HYG} flat: steps_total=0 (threshold > 0) [no baseline]" in text
 
 
 def test_is_blank_name():

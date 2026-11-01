@@ -79,15 +79,24 @@ def test_hygiene_repeat_belt_escalates_only_added_or_changed_cases():
                    "`[added]`", "`[changed]`", "`[unchanged]`", "`[no baseline]`",
                    "never `E-HYGIENE_REPEAT`", "`spec-hunk`, `test-label`, `page-preamble`, `glossary`",
                    "declares a hygiene ratchet", "§ Adopting this process in a repo",
-                   "checks 1–10", "`ENOUGH` / `NOT_ENOUGH`", "`VANISHED`", "outside this exemption"):
+                   "checks 1–10", "`ENOUGH` / `NOT_ENOUGH`", "`VANISHED`", "outside this exemption",
+                   # review P2: reviewer-raised codes are placed via the Cases block; its complement rule
+                   "`Cases:` block", "`- [added] <case>` / `- [changed] <case>`",
+                   "a case absent from that list is unchanged",
+                   "`no baseline — every case counts as added or changed`", "every case is eligible"):
         assert phrase in belt, phrase
+    # review P2: no reader of the contract alone gets the unconditional reading — every mention
+    # names the conditional rule (evidence.md § Report hygiene) and its prerequisite
     fc = read("briefs/finding-contract.md")
-    assert "only a case the PR added or changed" in fc.split("## Finding IDs", 1)[1].split("## ", 1)[0]
-    later = fc.split("## Later rounds", 1)[1].split("## ", 1)[0]
-    assert "`[added]` or `[changed]`" in later and "re-noted, never escalated" in later
-    verdict = fc.split("## The verdict", 1)[1].split("## ", 1)[0]
-    assert "`[unchanged]` case is never a blocking finding" in verdict
-    assert "cases the PR added or changed" in fc.split("## Action disposition", 1)[1].split("## ", 1)[0]
+    sections = {name: " ".join(fc.split(f"## {name}", 1)[1].split("\n## ", 1)[0].split())
+                for name in ("Finding IDs", "Later rounds", "The verdict", "Action disposition")}
+    for name, text in sections.items():
+        assert "conditional rule" in text and "§ Report hygiene" in text, name
+        assert "declares a hygiene ratchet" in text, name
+    assert "only a case the PR added or changed" in sections["Finding IDs"]
+    assert "`[added]` or `[changed]`" in sections["Later rounds"] and "re-noted, never escalated" in sections["Later rounds"]
+    assert "`[unchanged]` case is never a blocking finding" in sections["The verdict"]
+    assert "cases the PR added or changed only" in sections["Action disposition"]
     adopting = read("RULES.md").split("## Adopting this process in a repo", 1)[1]
     assert "the hygiene ratchet command, if any" in adopting and "join ratchet" in adopting
     assert "**hygiene ratchet**" in read("CONVENTIONS.md").split("## The lint gate", 1)[1]
