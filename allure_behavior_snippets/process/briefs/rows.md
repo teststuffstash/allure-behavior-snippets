@@ -22,7 +22,8 @@ Read intent before evidence; never read implementation code; the inputs dir is t
   these and nothing with a description in it (not `tree/`, not `evidence/`). Absent when the pack
   was built without `--mask-descriptions`: then check 10 is one read with the column covered.
   `pass1-prior.tsv` (with the previous review) is pass 1's round memory: the keys the previous
-  pass 2 ruled on, `key · ruling · round · rule` and nothing else.
+  pass 2 ruled on, `key · ruling · round · rule` and nothing else — only keys whose row provably
+  did not change since that review (the pack drops the rest, so a changed row is read afresh).
 - `tree/<specs-root>/` — the specs at head: neighbouring pages, `glossary.md`, the sibling
   `*.schema.json`, `use-cases/`, `worlds/`. Read a neighbour when a touched row references it
   (an alias anchor, a glossary term, a cited use case).
@@ -85,10 +86,12 @@ The numbers are stable IDs (`R<check>/…`). 5 (table shape) is the candidate se
     carry ("empty metadata falls through" over a row whose `meta_title` column is absent) is the
     finding, and it survives. Inputs a `world` column names are explicit; a fixture name alone is
     not when two rows of the same world differ (CONVENTIONS § The intent column, "Rows read
-    without their description"). Rounds: a key `pass1-prior.tsv` lists as `survives` / `noted`
-    is re-listed by pass 1 as `(prior: ruled round N)` and not re-argued — pass 2 re-adjudicates
-    it only when the spec diff touches the row; a key ruled `withdrawn` / `contradicted` is not
-    raised again on the same grounds.
+    without their description"). Rounds: pass 1 re-lists EVERY key in `pass1-prior.tsv`, one
+    line each, as `- <key> — prior: ruled <ruling> round <N>` and does not re-argue it
+    (`survives` / `noted` is not re-raised as new, `withdrawn` / `contradicted` is not raised
+    again on the same grounds); pass 2 carries those lines into its adjudication unchanged, so
+    the chain persists across rounds, and re-adjudicates a key only when the spec diff touches
+    its row.
 
 A check-10 failure is not repaired by moving both scenarios into shared prose while leaving
 rows with no distinguishing input/expected cells. Prose supplies the general rule; cells (or

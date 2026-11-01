@@ -18,7 +18,9 @@ numbered over the whole page), ``row-keys.tsv`` (key → description), and the m
 ``evidence/`` and the attachments stay unmasked; ``manifest.json`` lists the masked files. With
 ``--prior-review`` it also writes ``pass1-prior.tsv`` — the keys the previous review's "Pass-1
 adjudication" ruled on (key, ruling, round, rule) and nothing else, so pass 1 keeps its memory
-without a description reaching it.
+without a description reaching it; a key is carried only while it provably names the same row
+(the review's ``specs-review head=`` trailer, the rule's section and the key's row unchanged
+since), else dropped — fail closed, the manifest's ``masked.prior`` says why.
 
 ``process-path`` prints the installed ``process/`` dir (the briefs, RULES.md, CONVENTIONS.md).
 stdlib only.
@@ -57,9 +59,16 @@ _ADJUDICATION_RE = re.compile(r"^\s*(?:#{1,6}\s*)?(?:\*\*)?pass[- ]?1 adjudicati
 _ITEM_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 _KEY_RE = re.compile(r"\br(\d+)(?:\.(\d+))?\b")
 _KEY_RANGE_RE = re.compile(r"\br(\d+)\.(\d+)\s*[-–—]\s*r(\d+)\.(\d+)\b")
-_RULING_RE = re.compile(r"\b(" + "|".join(RULINGS) + r")\b", re.IGNORECASE)
+_RULING = "|".join(RULINGS)
+# the verdict positions: an emphasised `**survives**` / `**contradicted as …**`, or the ruling right
+# after the key segment's `:` / `—` (optionally through a closing `**`); never a word elsewhere
+_VERDICT_RE = re.compile(r"(?:\*\*\s*|[:—–-]\s*(?:\*\*)?\s*)(" + _RULING + r")\b", re.IGNORECASE)
+# the prescribed re-listing form: `- <key> — prior: ruled <ruling> round <N>` / `(prior: ruled … round N)`
+_PRIOR_FORM_RE = re.compile(r"prior:\s*ruled\s+(" + _RULING + r")\s+round\s+(\d+|prior)\b", re.IGNORECASE)
+_QUOTED_RE = re.compile(r'"[^"]*"|`[^`]*`|(?<!\w)\'[^\']*\'(?!\w)')
 _LABEL_RE = re.compile(r"\bP\d+-\d+\b")
 _ROUND_RE = re.compile(r"^Prior findings:\s*none\s*\(round\s+(\d+)\)", re.IGNORECASE | re.MULTILINE)
+_TRAILER_RE = re.compile(r"<!--\s*specs-review\s+head=([0-9a-fA-F]{7,40})\b")
 
 
 class PackError(Exception):
@@ -253,11 +262,15 @@ def _expand_keys(text: str) -> list[str]:
 
 def prior_rulings(review: str | None, id_regex: str = tr.DEFAULT_ID_REGEX) -> list[dict]:
     """The previous review's pass-1 rulings as keys only: one record per row key the
-    "Pass-1 adjudication" section names, ``{key, ruling, round, rule}``. ``ruling`` is the first
-    of ``RULINGS`` on the item's line, ``round`` the review's own round when it states one
-    (``Prior findings: none (round N)``) else ``prior``, ``rule`` the first requirement id on the
-    line (``""`` when none). A line without a row key or a ruling yields nothing; no other text
-    of the review is carried — pass 1 must never see a description."""
+    "Pass-1 adjudication" section names, ``{key, ruling, round, rule}``. Quoted (``"…"``,
+    ``'…'``) and backticked spans are blanked first; ``ruling`` is read ONLY from a verdict
+    position (``**survives**``, ``: contradicted.``, ``— withdrawn.``) — a line with none, or with
+    two different rulings there, is rejected. ``round`` is the review's own round when it states
+    one (``Prior findings: none (round N)``) else ``prior``. The re-listing form a pass 1 writes,
+    ``<key> — prior: ruled <ruling> round <N>``, carries the ORIGINAL ruling and round through
+    later rounds (a differing verdict on the same line is a re-ruling and wins). ``rule`` is the
+    first requirement id on the line (``""`` when none). No other text of the review is carried
+    — pass 1 must never see a description."""
     if not review:
         return []
     m = _ROUND_RE.search(review)
@@ -265,14 +278,89 @@ def prior_rulings(review: str | None, id_regex: str = tr.DEFAULT_ID_REGEX) -> li
     rule_re = re.compile(rf"(?<![\w-])({id_regex})(?![\w-])")
     out: list[dict] = []
     for item in _adjudication_items(review):
-        ruling = _RULING_RE.search(item)
+        item = _QUOTED_RE.sub("", item)
         keys = _expand_keys(item)
-        if not ruling or not keys:
+        if not keys:
             continue
+        prior_form = _PRIOR_FORM_RE.search(item)
+        verdicts = {v.lower() for v in _VERDICT_RE.findall(_PRIOR_FORM_RE.sub("", item))}
+        if len(verdicts) > 1 or not (verdicts or prior_form):
+            continue  # no verdict, or an ambiguous one: not carried
+        ruling, this_round = (next(iter(verdicts)), rnd) if verdicts else (None, None)
+        if prior_form and (ruling is None or ruling == prior_form.group(1).lower()):
+            ruling, this_round = prior_form.group(1).lower(), prior_form.group(2).lower()
         rm = rule_re.search(_LABEL_RE.sub("", item))
         rule = rm.group(1) if rm else ""
-        out += [{"key": k, "ruling": ruling.group(1).lower(), "round": rnd, "rule": rule} for k in keys]
+        out += [{"key": k, "ruling": ruling, "round": this_round, "rule": rule} for k in keys]
     return out
+
+
+def prior_head(review: str | None) -> str | None:
+    """The head the previous review was posted at: its ``<!-- specs-review head=<sha> … -->``
+    trailer, or None."""
+    m = _TRAILER_RE.search(review or "")
+    return m.group(1).lower() if m else None
+
+
+def carry_prior_rulings(review: str | None, git: tr.Git, head: str, head_specs: dict[str, str],
+                        layout: tr.Layout) -> tuple[list[dict], dict]:
+    """The prior rulings that still name the same row at ``head`` — row keys are positional
+    per page, so a ruling is carried only when it cannot have drifted: the review states the head
+    it was posted at (else NO file: fail closed), the record names a rule (a key without one is
+    ambiguous across pages), that rule heads exactly one page at ``head``, its section is
+    byte-identical between the prior head and ``head``, and the key maps to the same description
+    at both (a table added earlier on the page renumbers every later key). Anything else is
+    dropped and the row is reviewed afresh. Returns ``(kept, info)``; ``info`` is the manifest's
+    ``masked.prior`` entry."""
+    rulings = prior_rulings(review, layout.id_regex)
+    info: dict = {"file": None, "head": None, "carried": 0, "dropped": 0, "reason": None}
+    if not rulings:
+        info["reason"] = "the prior review has no pass-1 adjudication with row keys"
+        return [], info
+    sha = prior_head(review)
+    if sha is None:
+        info["reason"] = "the prior review carries no `<!-- specs-review head=… -->` trailer"
+        info["dropped"] = len(rulings)
+        return [], info
+    try:
+        prior = git.rev(sha)
+    except subprocess.CalledProcessError:
+        info["reason"] = f"the prior review's head {sha} is not in the repo"
+        info["dropped"] = len(rulings)
+        return [], info
+    info["head"] = prior
+    page_of: dict[str, str | None] = {}
+    for path, text in head_specs.items():
+        for sec in tr.rule_sections(text, layout):
+            page_of[sec.rule] = None if sec.rule in page_of else path  # None = heads two pages
+    keymaps: dict[tuple[str, str], dict[str, str]] = {}
+
+    def keymap(rev: str, path: str, text: str | None) -> dict[str, str] | None:
+        if (rev, path) not in keymaps:
+            keymaps[(rev, path)] = None if text is None else dict(ev.mask_page(text)[1])
+        return keymaps[(rev, path)]
+
+    kept: list[dict] = []
+    for r in rulings:
+        path = page_of.get(r["rule"]) if r["rule"] else None
+        if path is None:
+            continue
+        prior_text = git.show(prior, path)
+        if prior_text is None or (tr.section_text(prior_text, r["rule"], layout)
+                                  != tr.section_text(head_specs[path], r["rule"], layout)):
+            continue
+        before, now = keymap(prior, path, prior_text), keymap(head, path, head_specs[path])
+        prefix = r["key"] if "." in r["key"] else r["key"] + "."
+        same = ({k: d for k, d in before.items() if k == r["key"] or k.startswith(prefix)}
+                == {k: d for k, d in now.items() if k == r["key"] or k.startswith(prefix)})
+        if same and (r["key"] in now or any(k.startswith(prefix) for k in now)):
+            kept.append(r)
+    info["carried"], info["dropped"] = len(kept), len(rulings) - len(kept)
+    if kept:
+        info["file"] = PASS1_PRIOR
+    else:
+        info["reason"] = "every prior ruling was dropped: its rule's section or its key changed since the prior head"
+    return kept, info
 
 
 def pass1_prior_tsv(rulings: list[dict]) -> str:
@@ -324,6 +412,7 @@ def build(args: argparse.Namespace) -> dict:
     #     cell a row key numbered over the whole page, the key map, no diff
     masked_specs: dict[str, str] = {}
     masked_files: list[str] = []
+    prior_info: dict | None = None
     if args.mask_descriptions:
         keymaps: dict[str, list[tuple[str, str]]] = {}
         used: dict[str, set[str]] = {}
@@ -340,11 +429,13 @@ def build(args: argparse.Namespace) -> dict:
         write("row-keys.tsv", row_keys_tsv(keymaps, used))
         masked_files += ["spec-sections-masked.md"]
         # 2c. pass 1's round memory: the previous review's pass-1 rulings as KEYS only (the
-        #     review itself quotes descriptions, so it stays out of the masked allow-list)
-        prior_keys = prior_rulings(prior, layout.id_regex)
-        if prior_keys:
-            write(PASS1_PRIOR, pass1_prior_tsv(prior_keys))
-            masked_files.append(PASS1_PRIOR)
+        #     review itself quotes descriptions, so it stays out of the masked allow-list), and
+        #     only the keys that still name the same row (fail closed on drift)
+        if prior is not None:
+            prior_keys, prior_info = carry_prior_rulings(prior, git, head, head_specs, layout)
+            if prior_keys:
+                write(PASS1_PRIOR, pass1_prior_tsv(prior_keys))
+                masked_files.append(PASS1_PRIOR)
 
     # 3. evidence for the touched rules (the digest reads the WHOLE run, so a case that moved
     #    to another rule is classified relabelled, not vanished; the files carry touched rules)
@@ -470,7 +561,7 @@ def build(args: argparse.Namespace) -> dict:
                    "pr_body": body is not None},
         "files": sorted(files),
         "masked": ({"files": sorted(masked_files), "keys": "row-keys.tsv", "tree": "unmasked",
-                    "prior": PASS1_PRIOR if PASS1_PRIOR in masked_files else None,
+                    "prior": prior_info,
                     "unmasked": ["spec-sections.md", "digest.md", "<RULE>.md", "evidence.json",
                                  "evidence/", "baseline-evidence.json", "attachments/", "tree/"]}
                    if args.mask_descriptions else None),
