@@ -211,7 +211,8 @@ def test_no_findings_is_none(tmp_path):
         {"case": "a", "world": None, "status": "passed", "params": {"p": 1}, "attachments": [],
          "steps": [], "failure": None, "test": "t#a", "file": "t"}]}}
     lines = evidence.render_digest(["R"], ev)
-    assert lines[-8:] == ["- none", "", "**Hygiene:**", "", "cases 1 · attachments 0 · bytes 0 · max depth 0", "", "- none", ""]
+    assert lines[-10:] == ["- none", "", "**Cases:** no baseline — every case counts as added or changed (1 cases)", "",
+                           "**Hygiene:**", "", "cases 1 · attachments 0 · bytes 0 · max depth 0", "", "- none", ""]
 
 
 def test_param_columns_drop_all_empty():
@@ -248,20 +249,21 @@ def test_hygiene_metrics_and_block(results_dir, tmp_path):
         "blank_names": ["Attachment 3", "verdict"]}
     assert by_case["flat"]["hygiene"]["steps_total"] == 0
     block = evidence.hygiene_lines(HYG, ev)
+    # no baseline → every line ends in the ``[no baseline]`` mark (the belt's eligibility mark)
     assert block == [
         "cases 6 · attachments 11 · bytes 1234 · max depth 2",
         "",
-        f"- STEP_FLAT {HYG} flat: steps_total=0 (threshold > 0)",
-    ] + [f"- STEP_NOISE {HYG} {c}: steps outside given/when/then: `open` (threshold 0)"
+        f"- STEP_FLAT {HYG} flat: steps_total=0 (threshold > 0) [no baseline]",
+    ] + [f"- STEP_NOISE {HYG} {c}: steps outside given/when/then: `open` (threshold 0) [no baseline]"
          for c in ("blank", "blob", "bulk", "clean")] + [
         f"- STEP_NOISE {HYG} noisy: steps_top=9 (threshold 8), steps outside given/when/then: "
-        + ", ".join(f"`s{i}`" for i in range(9)) + " (threshold 0)",
-    ] + [f"- UNIT_ONLY_CANDIDATE {HYG} {c}: steps but no `when` step (threshold ≥ 1)"
+        + ", ".join(f"`s{i}`" for i in range(9)) + " (threshold 0) [no baseline]",
+    ] + [f"- UNIT_ONLY_CANDIDATE {HYG} {c}: steps but no `when` step (threshold ≥ 1) [no baseline]"
          for c in ("blank", "blob", "bulk", "clean", "noisy")] + [
-        f"- ATTACH_BULK {HYG} bulk: attachments_total=9 (threshold 8)",
-        f"- PARAM_BLOB {HYG} blob: param_max_len=500 (threshold 400)",
-        f"- NAME_BLANK {HYG} blank: blank_names=`Attachment 3`, `verdict` (threshold 0)",
-    ] + [f"- THREAD_BROKEN {HYG} {c}: {p} in no given/when/then step"
+        f"- ATTACH_BULK {HYG} bulk: attachments_total=9 (threshold 8) [no baseline]",
+        f"- PARAM_BLOB {HYG} blob: param_max_len=500 (threshold 400) [no baseline]",
+        f"- NAME_BLANK {HYG} blank: blank_names=`Attachment 3`, `verdict` (threshold 0) [no baseline]",
+    ] + [f"- THREAD_BROKEN {HYG} {c}: {p} in no given/when/then step [no baseline]"
          for c, p in [("blank", "n"), ("blob", "payload"), ("bulk", "n"), ("clean", "n"),
                       ("flat", "n"), ("noisy", "n")]]
     # "clean" is clean on every threshold code: only the phase codes name it (its one
@@ -275,7 +277,7 @@ def test_hygiene_metrics_and_block(results_dir, tmp_path):
                hygiene=dict(by_case["clean"]["hygiene"], attachment_bytes=262145))
     bare = dict(by_case["flat"], case="bare0", params={}, attachments=[], thread_broken=[])
     ev2 = {"run": {}, "rules": {"X": [big, bare]}}
-    assert evidence.hygiene_lines("X", ev2)[2:] == ["- ATTACH_BULK X big: attachment_bytes=262145 (threshold 262144)"]
+    assert evidence.hygiene_lines("X", ev2)[2:] == ["- ATTACH_BULK X big: attachment_bytes=262145 (threshold 262144) [no baseline]"]
     # digest: block sits after Findings, hygiene lines never appear among findings
     out = tmp_path / "out"
     evidence.write_outputs(ev, out, rules=[HYG])
@@ -283,6 +285,93 @@ def test_hygiene_metrics_and_block(results_dir, tmp_path):
     findings_part, hyg_part = text.split("**Hygiene:**")
     assert "STEP_FLAT" not in findings_part and "- none" in findings_part
     assert "- STEP_FLAT" in hyg_part and "- NAME_BLANK" in hyg_part
+
+
+def test_hygiene_lines_mark_the_case_status_against_the_baseline(results_dir, tmp_path):
+    """v0.6.9 (#49): every hygiene line ends in [added] / [changed] / [unchanged] against the
+    baseline record of the same (rule · world · case) — the repeat belt escalates only added or
+    changed cases, so pass 2 reads eligibility off the digest. Changed = parameters, top-level
+    step names or attachment names differ; a parameters-only or an attachment-name-only change
+    counts."""
+    ev = evidence.build_evidence(evidence.load_results([results_dir]), generated="2026-09-28",
+                                 results_dirs=[results_dir])
+    by_case = {r["case"]: r for r in ev["rules"][HYG]}
+    def old(case, **kw):
+        r = {k: by_case[case][k] for k in ("case", "world", "test", "file", "status", "params",
+                                           "attachments", "steps")}
+        r.update(kw)
+        return r
+    baseline = {"run": {}, "rules": {HYG: [
+        old("flat"),                                             # byte-identical → unchanged
+        old("blob", params={"payload": "c" * 500}),              # parameters only → changed
+        old("blank", attachments=["Attachment 4"]),              # attachment name only → changed
+        old("noisy", steps=[f"s{i}" for i in range(8)] + ["s9"]),  # a step name → changed
+        old("bulk", world="other"),                              # same case, other world → added
+        # "clean" absent → added
+    ]}}
+    marks = {}
+    for line in evidence.hygiene_lines(HYG, ev, baseline)[2:]:
+        head, mark = line.rsplit(" [", 1)
+        marks.setdefault(head.split(f" {HYG} ", 1)[1].split(":", 1)[0], set()).add(mark.rstrip("]"))
+    assert marks == {"flat": {"unchanged"}, "blob": {"changed"}, "blank": {"changed"},
+                     "noisy": {"changed"}, "bulk": {"added"}, "clean": {"added"}}
+    assert evidence.case_change(HYG, by_case["flat"], baseline) == "unchanged"
+    assert evidence.case_change(HYG, by_case["flat"], None) is None
+    # a second baseline record of the same identity that is identical → unchanged
+    two = {"run": {}, "rules": {HYG: [old("flat", params={"n": 2}), old("flat")]}}
+    assert evidence.case_change(HYG, by_case["flat"], two) == "unchanged"
+    # an old baseline record without ``steps`` can never prove unchanged (fail closed → changed)
+    legacy = {"run": {}, "rules": {HYG: [{k: v for k, v in old("flat").items() if k != "steps"}]}}
+    assert evidence.case_change(HYG, by_case["flat"], legacy) == "changed"
+    # a rule absent from the baseline → every case added
+    assert evidence.case_change(HYG, by_case["flat"], {"rules": {}}) == "added"
+    # the digest carries the marks; the line shape before the mark is unchanged (consumers grep
+    # ``^- <CODE> ``); findings never carry a mark
+    out = tmp_path / "out"
+    evidence.write_outputs(ev, out, rules=[HYG], baseline=baseline)
+    text = (out / "digest.md").read_text(encoding="utf-8")
+    findings_part, hyg_part = text.split("**Hygiene:**")
+    assert f"- STEP_FLAT {HYG} flat: steps_total=0 (threshold > 0) [unchanged]" in hyg_part
+    assert f"- PARAM_BLOB {HYG} blob: param_max_len=500 (threshold 400) [changed]" in hyg_part
+    assert f"- ATTACH_BULK {HYG} bulk: attachments_total=9 (threshold 8) [added]" in hyg_part
+    assert "[no baseline]" not in hyg_part
+    assert not any(l.startswith("- ") and l.endswith("]") for l in findings_part.splitlines())
+
+
+def test_digest_cases_block_places_every_case(results_dir, tmp_path):
+    """v0.6.9 (#49, review P2): a case the tool flags nothing on (the Hygiene block reads
+    ``- none``) still gets its status — the per-rule ``**Cases:**`` block lists every added /
+    changed case, the unchanged ones are the complement; no baseline → the fallback line."""
+    ev = evidence.build_evidence(evidence.load_results([results_dir]), generated="2026-09-28",
+                                 results_dirs=[results_dir])
+    clean = dict({r["case"]: r for r in ev["rules"][HYG]}["clean"], thread_broken=[],
+                 phases={"given": ["given: w"], "when": ["when: x"], "then": ["verdict: ok"], "other": []})
+    quiet = {**clean, "case": "quiet", "world": "w1", "params": {"n": 2}}
+    same = {**clean, "case": "same"}
+    ev2 = {"run": {"generated": "x", "files": ["tests.test_hyg"], "unlabelled": []},
+           "rules": {"Q": [dict(clean, case="fresh"), quiet, same]}}
+    baseline = {"run": {}, "rules": {"Q": [
+        {k: v for k, v in same.items() if k != "hygiene"},                       # unchanged
+        {k: v for k, v in quiet.items() if k != "hygiene"} | {"params": {"n": 3}},  # changed
+    ]}}
+    assert evidence.hygiene_lines("Q", ev2, baseline)[2:] == ["- none"], "nothing mechanically flagged"
+    assert evidence.case_lines("Q", ev2, baseline) == [
+        "**Cases:** added 1 · changed 1 · unchanged 1", "",
+        "- [added] fresh", "- [changed] quiet · world: w1"]
+    assert evidence.case_lines("Q", ev2, None) == [
+        "**Cases:** no baseline — every case counts as added or changed (3 cases)"]
+    assert evidence.case_lines("Q", {"run": {}, "rules": {"Q": [same]}}, baseline) == [
+        "**Cases:** added 0 · changed 0 · unchanged 1", "", "- none added or changed"]
+    # placement: after Findings, before Hygiene; the Hygiene marks stay as they are
+    out = tmp_path / "out"
+    evidence.write_outputs(ev2, out, rules=["Q"], baseline=baseline)
+    text = (out / "digest.md").read_text(encoding="utf-8")
+    assert ("**Findings:**\n\n- none\n\n**Cases:** added 1 · changed 1 · unchanged 1\n\n"
+            "- [added] fresh\n- [changed] quiet · world: w1\n\n**Hygiene:**\n\n") in text
+    evidence.write_outputs(ev, out, rules=[HYG])
+    text = (out / "digest.md").read_text(encoding="utf-8")
+    assert "\n**Cases:** no baseline — every case counts as added or changed (6 cases)\n\n**Hygiene:**\n" in text
+    assert f"- STEP_FLAT {HYG} flat: steps_total=0 (threshold > 0) [no baseline]" in text
 
 
 def test_is_blank_name():
@@ -309,9 +398,9 @@ def test_thread_phases_bolding_and_summary(results_dir, tmp_path):
     # hygiene: THREAD_BROKEN only for (b), placed after NAME_BLANK
     block = evidence.hygiene_lines(THR, ev)
     assert block[2:] == [
-        f"- STEP_NOISE {THR} nowhere: steps outside given/when/then: `open` (threshold 0)",
-        f"- UNIT_ONLY_CANDIDATE {THR} nowhere: steps but no `when` step (threshold ≥ 1)",
-        f"- THREAD_BROKEN {THR} nowhere: door in no given/when/then step"]
+        f"- STEP_NOISE {THR} nowhere: steps outside given/when/then: `open` (threshold 0) [no baseline]",
+        f"- UNIT_ONLY_CANDIDATE {THR} nowhere: steps but no `when` step (threshold ≥ 1) [no baseline]",
+        f"- THREAD_BROKEN {THR} nowhere: door in no given/when/then step [no baseline]"]
     # colouring: the fully threaded cell is bold in the fragment and the digest, others plain
     out = tmp_path / "out"
     evidence.write_outputs(ev, out, rules=[THR])

@@ -115,8 +115,9 @@ iteration, carried as advisory in [briefs/rows.md](briefs/rows.md) § Table shap
 
 - Pin `allure-behavior-snippets` (the wheel) at the version whose process you run; bump the pin
   to adopt a new process version. The repo's own process page becomes a pointer here plus its
-  repo facts: the specs root, the ID prefix, the worlds, the spec gate and lint commands, who
-  gates spec rows (rule 1).
+  repo facts: the specs root, the ID prefix, the worlds, the spec gate and lint commands (the
+  join ratchet; the hygiene ratchet command, if any — the evidence brief's repeat belt narrows to
+  the cases a PR added or changed only where one is declared), who gates spec rows (rule 1).
 - The tools: `touched-rules` (which rules a diff reaches), `evidence-pack` (the reviewer's
   context pack), `allure-evidence` (evidence tables + digest), `process-path` (where these files
   are installed).

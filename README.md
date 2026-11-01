@@ -97,7 +97,7 @@ Writes into `--out` (a previous pack there is replaced; any other non-empty dir 
 | `spec-sections.md` | each touched rule's section at head, then the spec diff |
 | `evidence.json` | the run's records for the touched rules |
 | `evidence/<RULE>.json` | the same records, one file per touched rule (what a reviewer opens) |
-| `digest.md` | `Stamp:` (head / artifact) and `Baseline:` (commit + scope) lines, then per rule: tables, Δ vs baseline, mechanical findings, hygiene pre-flags |
+| `digest.md` | `Stamp:` (head / artifact) and `Baseline:` (commit + scope) lines, then per rule: tables, Δ vs baseline, mechanical findings, a `Cases:` block (`added n · changed n · unchanged n` + one `- [added]` / `- [changed]` line per such case; the rest are unchanged; `no baseline — every case counts as added or changed` without one), hygiene pre-flags — each hygiene line ends in the case's status against the baseline, `[added]` / `[changed]` / `[unchanged]` (`[no baseline]` without one); changed = parameters, top-level step names or attachment names differ from the baseline record of the same (rule · world · case) |
 | `<RULE>.md` | per touched rule: the spec table joined to its evidence, or the evidence table |
 | `baseline-evidence.json` | the baseline's records for the touched rules (with `--baseline`) |
 | `attachments/` | the touched rules' attachment files |

@@ -523,21 +523,71 @@ def findings(rule, evidence, baseline=None):
     return out
 
 
-def hygiene_lines(rule, evidence):
+CASE_CHANGE_FIELDS = ("params", "steps", "attachments")
+NO_BASELINE_MARK = "no baseline"
+
+
+def case_change(rule, record, baseline):
+    """``added`` / ``changed`` / ``unchanged``: the record against the baseline's records of
+    the same identity (rule · world · case — CONVENTIONS § Evidence row identity). Changed =
+    the parameters, the top-level step names or the attachment names differ from every
+    baseline record of that identity (a baseline record lacking one of those fields differs
+    on it — an old baseline marks changed, never unchanged); ``None`` when no baseline."""
+    if baseline is None:
+        return None
+    same = [r for r in (baseline.get("rules") or {}).get(rule, [])
+            if r.get("case") == record.get("case") and r.get("world") == record.get("world")]
+    if not same:
+        return "added"
+    for old in same:
+        if all(f in old and old[f] == record.get(f) for f in CASE_CHANGE_FIELDS):
+            return "unchanged"
+    return "changed"
+
+
+def case_lines(rule, evidence, baseline=None):
+    """``**Cases:**`` block: the rule's cases against the baseline — the counts line
+    ``added <n> · changed <n> · unchanged <n>`` then one ``- [added] <case>`` /
+    ``- [changed] <case>`` line per added or changed record (``· world: <w>`` when the record
+    names one; a case absent from the list is unchanged), so the reviewer can place a case the
+    tool flagged nothing on. No baseline → one fallback line: every case counts as eligible."""
+    recs = evidence["rules"].get(rule, [])
+    if baseline is None:
+        return [f"**Cases:** {NO_BASELINE_MARK} — every case counts as added or changed "
+                f"({len(recs)} cases)"]
+    counts = {"added": 0, "changed": 0, "unchanged": 0}
+    listed = []
+    for r in recs:
+        mark = case_change(rule, r, baseline)
+        counts[mark] += 1
+        if mark != "unchanged":
+            world = f" · world: {r['world']}" if r.get("world") else ""
+            line = f"- [{mark}] {r['case']}{world}"
+            if line not in listed:
+                listed.append(line)
+    head = f"**Cases:** " + " · ".join(f"{k} {counts[k]}" for k in ("added", "changed", "unchanged"))
+    return [head, ""] + (listed or ["- none added or changed"])
+
+
+def hygiene_lines(rule, evidence, baseline=None):
     """``**Hygiene:**`` body: per-rule totals, then one line per case crossing a
-    threshold (codes in fixed order). Records without ``hygiene`` (older evidence,
-    hand-built rows) count in the totals only."""
+    threshold (codes in fixed order), each ending in the case's status against the
+    baseline — ``[added]`` / ``[changed]`` / ``[unchanged]`` (``case_change``), or
+    ``[no baseline]`` when none was given — the repeat belt's eligibility mark (the evidence
+    brief § Report hygiene). Records without ``hygiene`` (older evidence, hand-built rows)
+    count in the totals only."""
     recs = evidence["rules"].get(rule, [])
     hyg = [(r, r["hygiene"]) for r in recs if r.get("hygiene")]
     totals = (f"cases {len(recs)} · attachments {sum(h['attachments_total'] for _, h in hyg)} · "
               f"bytes {sum(h['attachment_bytes'] for _, h in hyg)} · "
               f"max depth {max((h['steps_depth'] for _, h in hyg), default=0)}")
     out = []
-    def line(code, case, metric):
-        out.append(f"- {code} {rule} {case}: {metric}")
+    def line(code, case, metric, record=None):
+        mark = case_change(rule, record, baseline) if record is not None else None
+        out.append(f"- {code} {rule} {case}: {metric} [{mark or NO_BASELINE_MARK}]")
     for r, h in hyg:
         if h["steps_total"] == 0 and (r.get("attachments") or r.get("params")):
-            line("STEP_FLAT", r["case"], "steps_total=0 (threshold > 0)")
+            line("STEP_FLAT", r["case"], "steps_total=0 (threshold > 0)", r)
     for r, h in hyg:
         reasons = []
         if h["steps_top"] > HYG_STEPS_TOP:
@@ -549,13 +599,13 @@ def hygiene_lines(rule, evidence):
             names = ", ".join(f"`{cell(n, 40)}`" for n in other)
             reasons.append(f"steps outside given/when/then: {names} (threshold 0)")
         if reasons:
-            line("STEP_NOISE", r["case"], ", ".join(reasons))
+            line("STEP_NOISE", r["case"], ", ".join(reasons), r)
     for r, h in hyg:
         # UNIT_ONLY pre-filter (not the judgment itself): the case has steps but none is the
         # call under test, so no system boundary is named; the reviewer decides whether the
         # rule needs one. A step-less case is STEP_FLAT's business, not flagged twice.
         if h["steps_total"] > 0 and r.get("phases") is not None and not r["phases"].get("when"):
-            line("UNIT_ONLY_CANDIDATE", r["case"], "steps but no `when` step (threshold ≥ 1)")
+            line("UNIT_ONLY_CANDIDATE", r["case"], "steps but no `when` step (threshold ≥ 1)", r)
     for r, h in hyg:
         over = []
         if h["attachment_bytes"] > HYG_ATTACH_BYTES:
@@ -563,18 +613,18 @@ def hygiene_lines(rule, evidence):
         if h["attachments_total"] > HYG_ATTACH_TOTAL:
             over.append(f"attachments_total={h['attachments_total']} (threshold {HYG_ATTACH_TOTAL})")
         if over:
-            line("ATTACH_BULK", r["case"], ", ".join(over))
+            line("ATTACH_BULK", r["case"], ", ".join(over), r)
     for r, h in hyg:
         if h["param_max_len"] > HYG_PARAM_LEN:
-            line("PARAM_BLOB", r["case"], f"param_max_len={h['param_max_len']} (threshold {HYG_PARAM_LEN})")
+            line("PARAM_BLOB", r["case"], f"param_max_len={h['param_max_len']} (threshold {HYG_PARAM_LEN})", r)
     for r, h in hyg:
         if h.get("blank_names"):
             names = ", ".join(f"`{cell(n, 40)}`" for n in h["blank_names"])
-            line("NAME_BLANK", r["case"], f"blank_names={names} (threshold 0)")
+            line("NAME_BLANK", r["case"], f"blank_names={names} (threshold 0)", r)
     for r, h in hyg:
         if r.get("thread_broken"):
             line("THREAD_BROKEN", r["case"],
-                 f"{', '.join(r['thread_broken'])} in no given/when/then step")
+                 f"{', '.join(r['thread_broken'])} in no given/when/then step", r)
     return [totals, ""] + (out or ["- none"])
 
 
@@ -620,9 +670,11 @@ def render_digest(rules, evidence, baseline=None, report_url=None, spec=None):
             found += spec_findings(rule, spec[rule], evidence["rules"].get(rule, []))
         lines += found or ["- none"]
         lines.append("")
+        lines += case_lines(rule, evidence, baseline)
+        lines.append("")
         lines.append("**Hygiene:**")
         lines.append("")
-        lines += hygiene_lines(rule, evidence)
+        lines += hygiene_lines(rule, evidence, baseline)
         lines.append("")
     return lines
 

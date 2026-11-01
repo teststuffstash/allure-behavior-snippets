@@ -97,6 +97,27 @@ no second definition.
   `Hygiene notes:` becomes a BLOCKING finding `E-HYGIENE_REPEAT/<page>#<RULE>/<case>` —
   `Observed:` names the code and the prior review it was first noted in. The prior review is your
   only memory; no other state.
+- **The belt escalates only cases the PR added or changed.** Case identity = (rule · world ·
+  case) ([../CONVENTIONS.md](../CONVENTIONS.md) § Evidence row identity); a case is *changed* when
+  its record's parameters, steps or attachments differ from the baseline record of that
+  identity. The digest states it per rule: the `Cases:` block (`added n · changed n ·
+  unchanged n`, then one `- [added] <case>` / `- [changed] <case>` line each — a case absent from
+  that list is unchanged, so a code you raise on your own judgment is placed there too), and
+  every line of the `Hygiene:` block ends in its case's mark — `[added]`, `[changed]`,
+  `[unchanged]`. Read eligibility off the digest, never off the rule or the diff. `[no baseline]`
+  (the `Cases:` block then reads `no baseline — every case counts as added or changed`) means
+  every case is eligible — the belt above, unnarrowed. A code on an `[unchanged]` case is
+  a NOTE (historical context — [finding-contract.md](finding-contract.md) § Action disposition),
+  never `E-HYGIENE_REPEAT`, whatever rule the case sits under and however that rule entered the
+  scope (`spec-hunk`, `test-label`, `page-preamble`, `glossary`): a page-wide restructure puts
+  every rule on the page in scope, not the suite's hygiene backlog in the PR's bill. Conditional:
+  this exemption applies only where the consuming repo declares a hygiene ratchet in its process
+  facts ([../RULES.md](../RULES.md) § Adopting this process in a repo — the backlog is then bounded
+  by that ratchet, a PR may not add a hygiene pair to it); a repo that declares none keeps the
+  belt above on every case, and a `[no baseline]` mark keeps it too. Substantive findings — the
+  rows brief's checks 1–10, the evidence verdict (`ENOUGH` / `NOT_ENOUGH`), `VANISHED` and the
+  other predicate codes — are outside this exemption entirely: it is about the hygiene codes and
+  nothing else.
 - Thresholds are judgment marks, not counters.
 
 ## What you must not do
