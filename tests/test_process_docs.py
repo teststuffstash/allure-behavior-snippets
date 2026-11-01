@@ -69,6 +69,30 @@ def test_evidence_brief_predicate_codes():
     assert "HYGIENE_REPEAT" in ev and "three worst" in ev
 
 
+def test_hygiene_repeat_belt_escalates_only_added_or_changed_cases():
+    """v0.6.9 (#49): the belt's eligibility set is the cases the PR added or changed, read off the
+    digest's marks; unchanged cases are notes; conditional on a declared hygiene ratchet; the
+    substantive checks stay outside the exemption."""
+    ev = read("briefs/evidence.md")
+    belt = " ".join(ev.split("## Report hygiene", 1)[1].split("\n## ", 1)[0].split())  # unwrapped
+    for phrase in ("only cases the PR added or changed", "(rule · world · case)",
+                   "`[added]`", "`[changed]`", "`[unchanged]`", "`[no baseline]`",
+                   "never `E-HYGIENE_REPEAT`", "`spec-hunk`, `test-label`, `page-preamble`, `glossary`",
+                   "declares a hygiene ratchet", "§ Adopting this process in a repo",
+                   "checks 1–10", "`ENOUGH` / `NOT_ENOUGH`", "`VANISHED`", "outside this exemption"):
+        assert phrase in belt, phrase
+    fc = read("briefs/finding-contract.md")
+    assert "only a case the PR added or changed" in fc.split("## Finding IDs", 1)[1].split("## ", 1)[0]
+    later = fc.split("## Later rounds", 1)[1].split("## ", 1)[0]
+    assert "`[added]` or `[changed]`" in later and "re-noted, never escalated" in later
+    verdict = fc.split("## The verdict", 1)[1].split("## ", 1)[0]
+    assert "`[unchanged]` case is never a blocking finding" in verdict
+    assert "cases the PR added or changed" in fc.split("## Action disposition", 1)[1].split("## ", 1)[0]
+    adopting = read("RULES.md").split("## Adopting this process in a repo", 1)[1]
+    assert "the hygiene ratchet command, if any" in adopting and "join ratchet" in adopting
+    assert "**hygiene ratchet**" in read("CONVENTIONS.md").split("## The lint gate", 1)[1]
+
+
 def test_rows_brief_checks_and_candidate_shape():
     rows = read("briefs/rows.md")
     for n in (1, 2, 3, 4, 7, 8, 9, 10):

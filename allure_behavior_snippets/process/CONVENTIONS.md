@@ -230,7 +230,12 @@ prose rules are read, not counted — a word lint makes requirements read like c
 
 Report-shape debt (attachments outside steps, steps with no evidence, over-long descriptions) and
 the join counts above are held by **ratchets** against a committed baseline — exceeding fails,
-equal or lower passes, the fixing PR lowers the line; never a big-bang gate.
+equal or lower passes, the fixing PR lowers the line; never a big-bang gate. A repo may add a
+**hygiene ratchet** over the digest's hygiene codes as identities, (rule · world · case · code)
+pairs against a committed baseline — a PR may not introduce a pair absent from it, a pair that
+disappears lowers it (a fix-one-break-one under the same rule and code is red); its command is a
+repo fact (RULES.md § Adopting this process in a repo) and it is what lets the evidence brief's
+repeat belt stop at the cases a PR added or changed.
 
 ## Issue acceptance — rows run at HEAD
 

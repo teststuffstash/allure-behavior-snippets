@@ -30,7 +30,7 @@ suffix); `<RULE>` is the requirement ID.
 | evidence | `E-<CODE>/<page>#<RULE>[/<case>]` — `/<case>` when the code is per case or per row (the case id, or the spec row's description cell, verbatim) | `E-ROW_UNPROVEN/endpoints/orders#API-ORDERS-CREATE/token expired` |
 | evidence, pack-level | `E-STALE/run` — the run is not stamped with this head | `E-STALE/run` |
 | hygiene (notes) | `H-<CODE>/<case>` — never blocking on its own | `H-NAME_BLANK/token expired` |
-| hygiene, repeated | `E-HYGIENE_REPEAT/<page>#<RULE>/<case>` — blocking | |
+| hygiene, repeated | `E-HYGIENE_REPEAT/<page>#<RULE>/<case>` — blocking; only a case the PR added or changed (the digest's `[added]` / `[changed]` mark) where the repo declares a hygiene ratchet, else every case | |
 
 ## Fields of a blocking finding
 
@@ -58,22 +58,29 @@ When `prior-review.md` holds a review, FIRST list each of its finding IDs as `re
 `still open: <what is still missing>`, THEN review what changed. A finding you drop without
 marking it is a contradiction the worker cannot see. A prior `H-<CODE>/<case>` note whose same
 code still fires on the same case becomes `E-HYGIENE_REPEAT` ([evidence.md](evidence.md)
-§ Report hygiene). On a staged read the prior pass-1 rulings reach pass 1 as keys only
-(`pass1-prior.tsv`, [rows.md](rows.md) check 10): pass 1 re-lists every one of them as
+§ Report hygiene) when the case is `[added]` or `[changed]` in the digest's `Hygiene:` block —
+an `[unchanged]` case is re-noted, never escalated, where the repo declares a hygiene ratchet
+(no ratchet, or `[no baseline]`: every case escalates). On a staged read the prior pass-1
+rulings reach pass 1 as keys only (`pass1-prior.tsv`, [rows.md](rows.md) check 10): pass 1
+re-lists every one of them as
 `- <key> — prior: ruled <ruling> round <N>`, pass 2 carries those lines into its adjudication
 unchanged — a ruling stands across rounds unless the row changed — so the chain persists.
 
 ## The verdict — one for both briefs
 
 `CHANGES_REQUESTED` when either brief has a blocking finding, or any prior finding is still open.
-Otherwise `APPROVE`. A comment is never your terminal state. Your approval approves spec rows and
+Otherwise `APPROVE`. A hygiene code on an `[unchanged]` case is never a blocking finding where the
+repo declares a hygiene ratchet; the substantive checks block on unchanged cases as they always
+did. A comment is never your terminal state. Your approval approves spec rows and
 their evidence — never code.
 
 ## Action disposition — approval does not schedule work
 
 Nobody triages review prose into work. A blocking finding requests a fix before approval;
 ordinary advisory/Shape/Hygiene text is historical context, not an action queue. The existing
-hygiene-repeat rule still applies. Do not turn optional polish into required work or sprouts.
+hygiene-repeat rule still applies to cases the PR added or changed; on an unchanged case a hygiene
+note stays that context round after round. Do not turn optional polish into required work or
+sprouts.
 
 This brief does not emit `Follow-ups:` or create issues. Where a platform reviewer has a
 machine-consumed follow-up channel, its destination and harvest policy govern that channel;

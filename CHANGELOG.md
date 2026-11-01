@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.6.9 — 2026-11-01
+
+The anti-degeneration belt charged a PR for the suite's hygiene backlog in discovery order: on
+oracle-fleet #977 (process v0.6.7) 8 of 11 blocking findings over four rounds were
+`E-HYGIENE_REPEAT` escalations of notes made the round before, three of them on a rule the PR
+never edited — a page-wide restructure puts every rule on the page in scope, and the belt then
+turned every note on those rules into next round's blocker (#49). The review's three points, each
+met here:
+- **Case-level, not rule-level** (point 1): the belt's eligibility set is the cases the PR added
+  or changed — identity (rule · world · case), *changed* = the record's parameters, top-level
+  step names or attachment names differ from the baseline record of that identity — never "cases
+  under a touched rule", whatever the rule's source (`spec-hunk`, `test-label`, `page-preamble`,
+  `glossary`). A hygiene code on an unchanged case is a NOTE (historical context, § Action
+  disposition), never `E-HYGIENE_REPEAT`.
+- **Identities, not counts** (point 2): the repo-side hygiene ratchet is defined in
+  CONVENTIONS § The lint gate as a baseline of (rule · world · case · code) pairs — a PR may not
+  introduce a pair absent from it, a pair that disappears lowers it, fix-one-break-one under the
+  same rule and code is red.
+- **Ordering** (point 3): the exemption is conditional — it applies only where the consuming repo
+  declares that hygiene ratchet in its process facts (RULES § Adopting this process in a repo now
+  lists "the hygiene ratchet command, if any" beside the join ratchet); a repo that declares none
+  keeps the belt on every case, as does a pack with no baseline. Substantive findings (rows brief
+  checks 1–10, the evidence verdict, `VANISHED` and the other predicate codes) are outside the
+  exemption entirely.
+- `allure-evidence`: every line of the digest's `**Hygiene:**` block now ends in the case's
+  status against `--baseline` — `- <CODE> <RULE> <case>: <metric> [added|changed|unchanged]`, or
+  `[no baseline]` without one — so pass 2 reads eligibility off the digest instead of guessing;
+  the line is otherwise unchanged (consumers that grep `^- <CODE> ` keep working).
+  `evidence.case_change(rule, record, baseline)` is the one definition: a baseline record of the
+  same (rule · world · case) that is identical on `params`, `steps` and `attachments` →
+  unchanged; none of that identity → added; else changed (a baseline record lacking one of those
+  fields can never prove unchanged — an old baseline marks changed, the belt stays on).
+- Tests: added / changed / unchanged / no-baseline marks; a parameters-only change and an
+  attachment-name-only change count as changed; a step-name change; the same case under another
+  world is added; a second identical baseline record proves unchanged; an old baseline without
+  `steps` fails closed; a rule absent from the baseline; findings carry no mark; process-doc pins.
+Rules 1–11, the rows brief and the author brief are unchanged.
+
 ## v0.6.8 — 2026-11-01
 
 Two scope fixes from the oracle-fleet #977 review rounds, one release.
