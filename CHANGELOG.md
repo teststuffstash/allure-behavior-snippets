@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Process text, wording only: `RULES.md` and `CONVENTIONS.md` no longer name a process version in
+  their own text (the version is the installed package's; `manifest.json` and `/process/VERSION`
+  state it). No rule, check or code changes.
+- README describes the current release without version stamps; adds `allure-evidence` and
+  `allure-behavior-snippets` usage.
+
 ## v0.6.9 — 2026-11-01
 
 The anti-degeneration belt charged a PR for the suite's hygiene backlog in discovery order: on
