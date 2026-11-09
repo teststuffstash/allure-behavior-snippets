@@ -1,50 +1,67 @@
 # allure-behavior-snippets
 
-Evidence tooling for repos that keep requirement specs next to their tests — and, since v0.5, the
-ONE portable home of the spec / evidence / review process those repos run. Installed as a wheel
-pinned per repo:
+Evidence tooling for repos that keep requirement specs next to their tests, and the ONE portable
+home of the spec / evidence / review process those repos run (homelab ADR-156). A repo pins one
+release and gets the tools and the process text at the same version.
+
+This page describes the current release; what changed in which version is
+[CHANGELOG.md](CHANGELOG.md).
+
+## Install
+
+Every [release](https://github.com/teststuffstash/allure-behavior-snippets/releases) publishes
+three artifacts under one version:
+
+| Artifact | For |
+|---|---|
+| the wheel — a release asset | CI jobs and reviewers that run the tools |
+| `ghcr.io/teststuffstash/allure-behavior-snippets:v<version>` | the SVG snippet generator as a container (its entrypoint is `allure-behavior-snippets`) |
+| `ghcr.io/teststuffstash/allure-behavior-snippets-process:v<version>` | the process text as files, no tool (§ The process as files) |
 
 ```
-pip install https://github.com/teststuffstash/allure-behavior-snippets/releases/download/v0.5.0/allure_behavior_snippets-0.5.0-py3-none-any.whl
+pip install https://github.com/teststuffstash/allure-behavior-snippets/releases/download/v<version>/allure_behavior_snippets-<version>-py3-none-any.whl
 ```
 
 | Console script | What it does |
 |---|---|
-| `allure-behavior-snippets` | one SVG + markdown snippet per Allure behavior (from a generated report's `behaviors.json`) |
 | `allure-evidence` | model-friendly evidence from RAW Allure results: per-rule tables, `evidence.json`, the reviewer `digest.md`, the spec join, the human spec-page render |
-| `touched-rules` | which rule IDs a `base...head` diff reaches (v0.5) |
-| `evidence-pack` | the specs reviewer's context pack for one PR round (v0.5) |
-| `process-path` | prints the installed `process/` dir (v0.5) |
+| `touched-rules` | which rule IDs a `base...head` diff reaches |
+| `evidence-pack` | the specs reviewer's context pack for one PR round |
+| `process-path` | prints the installed `process/` dir |
+| `allure-behavior-snippets` | one SVG + markdown snippet per Allure behavior (from a generated report's `behaviors.json`) |
 
-The v0.4.x scripts and flags are unchanged.
-
-## The process (v0.5)
+## The process
 
 Every repo with a specs root runs the same requirements → tests (Allure) → evidence → review
-process, or the process does not work (homelab ADR-156). It ships as package data in
+process, or the process does not work. It ships as package data in
 `allure_behavior_snippets/process/`, versioned with the tools that implement it:
 
-- [`RULES.md`](allure_behavior_snippets/process/RULES.md) — the numbered spec rules 1–10 ("rule N"
+- [`RULES.md`](allure_behavior_snippets/process/RULES.md) — the numbered spec rules 1–11 ("rule N"
   means rule N here), the contract page template, how a repo adopts.
 - [`CONVENTIONS.md`](allure_behavior_snippets/process/CONVENTIONS.md) — tests and evidence: one
-  story per rule, `rule()`, the intent column, row identity (rule, world, case), the Prime rule of
-  reporting (given / when / then, one call under test, a verdict step per claim, attachments under
-  their step) and its hygiene codes, the head/artifact stamp, evidence blocks, the lint gate.
+  story per rule, `rule()`, the intent column (the header is the parameter list, expected columns
+  end in `?`, rows read without their description), row identity (rule, world, case), the Prime
+  rule of reporting (given / when / then, one call under test, a verdict step per claim,
+  attachments under their step) and its hygiene codes, the head/artifact stamp, evidence blocks,
+  the lint gate and its ratchets.
 - [`briefs/rows.md`](allure_behavior_snippets/process/briefs/rows.md) — do the touched rows encode
-  intent (checks 1–4, 7; table shape as an advisory candidate).
+  intent (checks 1–4 and 7–10; check 10 is the staged read, the rows first with their
+  descriptions masked; table shape as an advisory candidate).
 - [`briefs/evidence.md`](allure_behavior_snippets/process/briefs/evidence.md) — is there enough
-  evidence per touched row (the predicate codes, baseline differences, report hygiene).
+  evidence per touched row (the stamp, the predicate codes, baseline differences, report hygiene
+  and its repeat belt).
 - [`briefs/finding-contract.md`](allure_behavior_snippets/process/briefs/finding-contract.md) —
   what both briefs share: derived finding IDs, the fields a worker fixes from, reconciliation,
-  round tracking, the one combined verdict and the review's output shape.
+  round tracking, the one combined verdict, what may defer a blocking finding, and the review's
+  output shape.
 - [`briefs/author.md`](allure_behavior_snippets/process/briefs/author.md) — the worker-facing
   brief: what a row author reads before touching a specs page (row shape, prose, tests, the PR
   body, what the reviewer does with it) — pointers into the rules, conventions and briefs above.
 
-A repo adopts by pinning the wheel and turning its own process page into a pointer here plus its
-repo facts (specs root, ID prefix, worlds, gate commands, who gates spec rows).
+How a repo adopts — the pin, and the repo facts its own process page keeps — is
+[`RULES.md` § Adopting this process in a repo](allure_behavior_snippets/process/RULES.md#adopting-this-process-in-a-repo).
 
-### The process as files — the artifact image (v0.6.5)
+### The process as files
 
 `ghcr.io/teststuffstash/allure-behavior-snippets-process:v<version>` is a `FROM scratch` image whose
 root filesystem is exactly the pinned process text — for a pod that reads the process as files
@@ -60,6 +77,31 @@ mounted read-only):
 
 It is published by the same tag push as the tool image (Dockerfile target `process`, workflow job
 `process`), signed the same way, and CI diffs its listing against `allure_behavior_snippets/process/`.
+
+## The tools
+
+### `allure-evidence`
+
+```
+allure-evidence --results DIR [--results DIR2 ...] --out OUTDIR
+                [--rules A,B,C] [--baseline evidence.json]
+                [--spec PAGE.md [--spec-page-out PAGE.md]]
+                [--report-url URL] [--report REPORT]
+```
+
+Reads the `*-result.json` files pytest's Allure plugin writes (not the generated report) and
+writes into `--out`:
+
+| File | What it is |
+|---|---|
+| `evidence.json` | every record, grouped by story label (== rule ID) |
+| `<RULE>.md` | per rule: the evidence table a spec page transcludes — with `--spec`, the page's own table joined to its evidence when the two join |
+| `digest.md` | with `--rules`: the reviewer digest for those rules (tables, Δ vs `--baseline`, mechanical findings, hygiene pre-flags) |
+
+`--spec-page-out` writes the `--spec` page with every joining rule's table rewritten for humans
+(the spec's own columns, descriptions linked to their test, exceptions marked). `--report-url` is
+the published Allure report (the footer link); with `--report` — that report as a directory or a
+single-file `index.html` — each row links to its own test.
 
 ### `touched-rules`
 
@@ -120,9 +162,24 @@ With `--mask-descriptions` (the staged read's first pass, briefs/rows.md check 1
 
 When no rule is touched it exits 0 with the empty forms of these files. Exit 64 on bad input.
 
+### `allure-behavior-snippets`
+
+```
+allure-behavior-snippets BEHAVIORS_JSON TARGET_DIR REPORT_URL
+```
+
+Reads a generated Allure report's `data/behaviors.json` and writes one SVG per story into
+`TARGET_DIR`, each test a line linking to `REPORT_URL<parentUid>/<uid>` (so `REPORT_URL` ends in
+`#behaviors/`). `docker compose up` at the repo root runs it over the committed sample report and
+serves the result.
+
 ## Development
 
 ```
 python3 -m pytest tests/test_evidence.py tests/test_touched_rules.py tests/test_pack.py tests/test_process_docs.py
 cd tests && python3 -m pytest test_unittests.py     # the SVG snippets (relative report paths)
 ```
+
+A release is a `v<version>` tag on `main`: the tag push publishes the wheel and both images. The
+version lives in `pyproject.toml` and `allure_behavior_snippets/__init__.py` (a test holds them
+equal; the process image refuses a tag that differs), and the release gets a `CHANGELOG.md` entry.

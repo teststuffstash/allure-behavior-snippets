@@ -1,8 +1,8 @@
 # The spec rules — how a repo's `specs/` is worked
 
-The portable process (allure-behavior-snippets v0.5; decided as homelab ADR-156): every repo that keeps
-`specs/` runs the SAME requirements → tests → evidence → review process, pinned by the version of
-this package it installs. **The reviewer reviews the result, not the diff.** Every interface (an
+The portable process (decided as homelab ADR-156): every repo that keeps `specs/` runs the SAME
+requirements → tests → evidence → review process, pinned by the version of the
+`allure-behavior-snippets` package it installs. **The reviewer reviews the result, not the diff.** Every interface (an
 endpoint, a tool, a pipeline stage) has a contract page under the repo's specs root with a sibling
 `<name>.schema.json`; rows are decision tables of key examples; tests prove the rows against the
 built artifact and stamp it.

@@ -59,7 +59,7 @@ substring is **unkeyed** — both are lint (§ The lint gate), never tolerance. 
 already describes are named by the world (a `world` column holding its name), never restated cell
 by cell.
 
-**Expected columns end in `?`** (v0.6.3): inputs first, expected outputs last, and every expected
+**Expected columns end in `?`**: inputs first, expected outputs last, and every expected
 column's header carries a trailing `?` — `title?`, `rc?`, `events_include?` — which is the
 parametrize argname `expected_title` / `expected_rc` / `expected_events_include` in pytest (the
 join maps the one to the other and keeps the role in the joined row). Outputs are errors, events
