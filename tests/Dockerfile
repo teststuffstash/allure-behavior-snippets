@@ -1,5 +1,5 @@
 #playwright is not supported on alpine, so tests run on the playwright ubuntu image
-FROM python:3.13-alpine AS exporter
+FROM python:3.15-alpine AS exporter
 
 ENV POETRY_VERSION=2.2.1
 
