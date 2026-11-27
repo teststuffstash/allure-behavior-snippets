@@ -1,11 +1,15 @@
 #playwright is not supported on alpine, so tests run on the playwright ubuntu image
-FROM python:3.13-alpine AS exporter
+FROM python:3.15-alpine AS exporter
 
 ENV POETRY_VERSION=2.2.1
 
 WORKDIR /app
 
-RUN pip install "poetry==$POETRY_VERSION" poetry-plugin-export
+# zstandard (poetry -> pbs-installer[download,install]) ships no cp315 wheel on PyPI for any
+# platform, so pip compiles it: a throwaway toolchain, removed in the same layer.
+RUN apk add --no-cache --virtual .build-deps build-base \
+    && pip install --no-cache-dir "poetry==$POETRY_VERSION" poetry-plugin-export \
+    && apk del .build-deps
 
 COPY pyproject.toml poetry.lock ./
 RUN poetry export -f requirements.txt --with=dev > requirements.txt
